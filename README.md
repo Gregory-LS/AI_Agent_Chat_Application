@@ -1,71 +1,22 @@
-# Agentic Chat
+# Backend Server
 
-A Claude-style chat application powered by OpenRouter. Chat with hundreds of models, create custom skills, and manage conversations.
+This is a simple Flask backend server.
 
-## Features
+## Setup
 
-- **Chat** — stream responses, stop mid-stream, copy messages, message metadata
-- **Model picker** — browse all OpenRouter models, grouped by provider, searchable, with context/pricing info
-- **Skills** — enable/disable built-in skills or create your own custom system prompts
-- **Conversations** — sidebar with search, rename, delete, auto-title from first message
-- **Attachments** — upload images (sent to vision-capable models), text/code files (inlined as context)
-- **Settings** — API key management, default model, dark/light theme
-- **Export/Import** — download conversations as JSON or Markdown, restore from backup
+1. Install dependencies:
+   ```bash
+   pip install flask
+   ```
 
-## Quick start
+2. Run the server:
+   ```bash
+   python server.py
+   ```
 
-```bash
-pip install httpx
-set OPENROUTER_API_KEY=sk-or-...
-python server.py
-```
+The server will start on http://localhost:5000.
 
-Open http://localhost:8000 in your browser.
+## Endpoints
 
-## Configuration
-
-| Variable | Default | Description |
-|---|---|---|
-| `OPENROUTER_API_KEY` | — | Your OpenRouter API key (required) |
-| `HOST` | `127.0.0.1` | Server bind address |
-| `PORT` | `8000` | Server port |
-
-The API key can also be set via the Settings UI (persisted to `data/config.json`).
-
-## File layout
-
-```
-├── server.py              # Python backend (stdlib + httpx)
-├── static/
-│   ├── index.html         # Single-page app markup
-│   ├── styles.css         # Dark/light theme CSS
-│   └── app.js             # Frontend JavaScript
-├── data/
-│   ├── config.json        # API key, default model
-│   ├── conversations/     # Per-conversation JSON files
-│   ├── skills.json        # Custom skills
-│   └── attachments/       # Uploaded images
-└── README.md
-```
-
-## API endpoints
-
-| Method | Path | Description |
-|---|---|---|
-| GET | `/api/models` | List OpenRouter models |
-| GET | `/api/balance` | Check API key balance |
-| GET/PUT | `/api/config` | Read/write settings |
-| GET/POST | `/api/conversations` | List/create conversations |
-| GET/PATCH/DELETE | `/api/conversations/:id` | Get/update/delete conversation |
-| POST | `/api/conversations/import` | Import a conversation backup |
-| GET | `/api/conversations/:id/export?format=json|markdown` | Export |
-| GET/POST | `/api/skills` | List/create skills |
-| PATCH/DELETE | `/api/skills/:id` | Update/delete skill |
-| POST | `/api/attachments` | Upload an attachment |
-| POST | `/api/chat` | Stream a chat response (SSE) |
-
-## Requirements
-
-- Python 3.10+
-- httpx (install via `pip install httpx`)
-- OpenRouter API key (get one at https://openrouter.ai/keys)
+- `GET /` - Returns a greeting message.
+- `GET /health` - Returns health status.
