@@ -1,71 +1,67 @@
-# Agentic Chat
+# Keyboard Shortcuts
 
-A Claude-style chat application powered by OpenRouter. Chat with hundreds of models, create custom skills, and manage conversations.
+A small, dependency-free utility for adding keyboard shortcuts to web pages.
 
 ## Features
 
-- **Chat** — stream responses, stop mid-stream, copy messages, message metadata
-- **Model picker** — browse all OpenRouter models, grouped by provider, searchable, with context/pricing info
-- **Skills** — enable/disable built-in skills or create your own custom system prompts
-- **Conversations** — sidebar with search, rename, delete, auto-title from first message
-- **Attachments** — upload images (sent to vision-capable models), text/code files (inlined as context)
-- **Settings** — API key management, default model, dark/light theme
-- **Export/Import** — download conversations as JSON or Markdown, restore from backup
+- Configure shortcuts with `Modifier+Key` strings
+- Supports `Ctrl`, `Meta`/`Cmd`, `Alt`, `Shift`
+- Ignores shortcuts while typing in form fields by default
+- Enable/disable at runtime
+- No dependencies
 
-## Quick start
+## Usage
 
-```bash
-pip install httpx
-set OPENROUTER_API_KEY=sk-or-...
-python server.py
+Include the file:
+
+```html
+<script src='keyboard_shortcuts.js'></script>
 ```
 
-Open http://localhost:8000 in your browser.
+Or in a CommonJS environment:
 
-## Configuration
-
-| Variable | Default | Description |
-|---|---|---|
-| `OPENROUTER_API_KEY` | — | Your OpenRouter API key (required) |
-| `HOST` | `127.0.0.1` | Server bind address |
-| `PORT` | `8000` | Server port |
-
-The API key can also be set via the Settings UI (persisted to `data/config.json`).
-
-## File layout
-
-```
-├── server.py              # Python backend (stdlib + httpx)
-├── static/
-│   ├── index.html         # Single-page app markup
-│   ├── styles.css         # Dark/light theme CSS
-│   └── app.js             # Frontend JavaScript
-├── data/
-│   ├── config.json        # API key, default model
-│   ├── conversations/     # Per-conversation JSON files
-│   ├── skills.json        # Custom skills
-│   └── attachments/       # Uploaded images
-└── README.md
+```js
+const KeyboardShortcuts = require('./keyboard_shortcuts');
 ```
 
-## API endpoints
+Create a new instance with your shortcuts:
 
-| Method | Path | Description |
-|---|---|---|
-| GET | `/api/models` | List OpenRouter models |
-| GET | `/api/balance` | Check API key balance |
-| GET/PUT | `/api/config` | Read/write settings |
-| GET/POST | `/api/conversations` | List/create conversations |
-| GET/PATCH/DELETE | `/api/conversations/:id` | Get/update/delete conversation |
-| POST | `/api/conversations/import` | Import a conversation backup |
-| GET | `/api/conversations/:id/export?format=json|markdown` | Export |
-| GET/POST | `/api/skills` | List/create skills |
-| PATCH/DELETE | `/api/skills/:id` | Update/delete skill |
-| POST | `/api/attachments` | Upload an attachment |
-| POST | `/api/chat` | Stream a chat response (SSE) |
+```js
+const shortcuts = new KeyboardShortcuts({
+  'Ctrl+K': () => openSearch(),
+  'Ctrl+Shift+N': () => createNewNote(),
+  'Alt+/': () => showHelp(),
+});
+```
 
-## Requirements
+You can also register shortcuts later:
 
-- Python 3.10+
-- httpx (install via `pip install httpx`)
-- OpenRouter API key (get one at https://openrouter.ai/keys)
+```js
+shortcuts.register('Ctrl+Z', () => undo());
+shortcuts.unregister('Ctrl+Z');
+```
+
+Temporarily disable all shortcuts while a modal is open:
+
+```js
+modal.addEventListener('open', () => shortcuts.disable());
+modal.addEventListener('close', () => shortcuts.enable());
+```
+
+Remove all listeners when done:
+
+```js
+shortcuts.destroy();
+```
+
+## Options
+
+The constructor accepts a second argument:
+
+```js
+new KeyboardShortcuts(shortcuts, { ignoreInputs: false });
+```
+
+- `ignoreInputs` (default `true`): When `true`, shortcuts will not fire while
+  focus is inside an `<input>`, `<textarea>`, `<select>`, `<button>`, or a
+  `contenteditable` element.
