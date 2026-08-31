@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Chat Interface</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+  <div id="chat-container">
+    <div id="chat-box">
+      <!-- Messages will appear here -->
+    </div>
+    <div class="chat-footer">
+      <form id="chat-form">
+        <input type="text" id="user-input" placeholder="Type your message..." />
+        <button type="submit" id="send-btn" style="display:none;">Send</button>
+      </form>
+      <button id="stop-btn" style="display:none;">Stop</button>
+      <button id="regenerate-btn" style="display:none;">Regenerate</button>
+    </div>
+  </div>
+  <script src="{{ url_for('static', filename='js/chat.js') }}"></script>
+</body>
+</html>
