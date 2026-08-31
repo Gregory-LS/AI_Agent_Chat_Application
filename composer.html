@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Composer Example</title>
+    <link rel="stylesheet" href="composer.css">
+</head>
+<body>
+    <div class="composer">
+        <div class="composer-attachments" id="attachmentPreview"></div>
+        <div class="composer-row">
+            <label for="fileInput" class="attach-button" title="Attach file">📎</label>
+            <input type="file" id="fileInput" multiple style="display:none">
+            <textarea id="messageInput" rows="1" placeholder="Type a message..."></textarea>
+            <button id="sendButton" title="Send (Ctrl+Enter)">Send</button>
+        </div>
+    </div>
+    <script src="composer.js"></script>
+</body>
+</html>
