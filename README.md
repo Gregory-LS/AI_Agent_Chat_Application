@@ -1,71 +1,45 @@
-# Agentic Chat
+# Conversation Import Endpoint
 
-A Claude-style chat application powered by OpenRouter. Chat with hundreds of models, create custom skills, and manage conversations.
+This project provides a minimal Flask application with a JSON endpoint to import conversations.
 
-## Features
+## Endpoint
 
-- **Chat** — stream responses, stop mid-stream, copy messages, message metadata
-- **Model picker** — browse all OpenRouter models, grouped by provider, searchable, with context/pricing info
-- **Skills** — enable/disable built-in skills or create your own custom system prompts
-- **Conversations** — sidebar with search, rename, delete, auto-title from first message
-- **Attachments** — upload images (sent to vision-capable models), text/code files (inlined as context)
-- **Settings** — API key management, default model, dark/light theme
-- **Export/Import** — download conversations as JSON or Markdown, restore from backup
+### POST /api/conversations/import
 
-## Quick start
+Accepts a JSON body with the following structure:
 
-```bash
-pip install httpx
-set OPENROUTER_API_KEY=sk-or-...
-python server.py
+```json
+{
+  "id": "optional-id",
+  "title": "Meeting notes",
+  "participants": ["alice", "bob"],
+  "messages": [
+    {"role": "user", "content": "Hello", "timestamp": "2024-01-01T12:00:00Z"},
+    {"role": "assistant", "content": "Hi", "timestamp": "2024-01-01T12:00:01Z"}
+  ],
+  "metadata": {}
+}
 ```
 
-Open http://localhost:8000 in your browser.
+Required fields:
+- `title`: string
+- `messages`: non-empty array of objects with `role` and `content`
 
-## Configuration
+Optional fields:
+- `id`: unique conversation ID (auto-generated if omitted)
+- `participants`: array of strings
+- `metadata`: arbitrary JSON object
+- each message may include `timestamp` or other fields
 
-| Variable | Default | Description |
-|---|---|---|
-| `OPENROUTER_API_KEY` | — | Your OpenRouter API key (required) |
-| `HOST` | `127.0.0.1` | Server bind address |
-| `PORT` | `8000` | Server port |
+On success: HTTP 201 with `{"status": "imported", "id": "...", "message_count": N}`.
+On validation failure: HTTP 422 with details.
+On malformed JSON: HTTP 400.
 
-The API key can also be set via the Settings UI (persisted to `data/config.json`).
-
-## File layout
+## Running
 
 ```
-├── server.py              # Python backend (stdlib + httpx)
-├── static/
-│   ├── index.html         # Single-page app markup
-│   ├── styles.css         # Dark/light theme CSS
-│   └── app.js             # Frontend JavaScript
-├── data/
-│   ├── config.json        # API key, default model
-│   ├── conversations/     # Per-conversation JSON files
-│   ├── skills.json        # Custom skills
-│   └── attachments/       # Uploaded images
-└── README.md
+pip install -r requirements.txt
+python app.py
 ```
 
-## API endpoints
-
-| Method | Path | Description |
-|---|---|---|
-| GET | `/api/models` | List OpenRouter models |
-| GET | `/api/balance` | Check API key balance |
-| GET/PUT | `/api/config` | Read/write settings |
-| GET/POST | `/api/conversations` | List/create conversations |
-| GET/PATCH/DELETE | `/api/conversations/:id` | Get/update/delete conversation |
-| POST | `/api/conversations/import` | Import a conversation backup |
-| GET | `/api/conversations/:id/export?format=json|markdown` | Export |
-| GET/POST | `/api/skills` | List/create skills |
-| PATCH/DELETE | `/api/skills/:id` | Update/delete skill |
-| POST | `/api/attachments` | Upload an attachment |
-| POST | `/api/chat` | Stream a chat response (SSE) |
-
-## Requirements
-
-- Python 3.10+
-- httpx (install via `pip install httpx`)
-- OpenRouter API key (get one at https://openrouter.ai/keys)
+Note: This is a standalone example. In a larger codebase, integrate the endpoint into the existing application and replace the in-memory `CONVERSATIONS` dict with the project's persistence layer.
