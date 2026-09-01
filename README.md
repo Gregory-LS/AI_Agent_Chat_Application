@@ -1,28 +1,13 @@
-# Chat Application
+# App Polish Plan
 
-This is a simple chat application core that provides:
-- **Message**: A data class representing a single message.
-- **ChatHistory**: Manages conversation history (add, get, clear, last message).
-- **ChatService**: High-level service to send messages and retrieve history.
+## Extras
+- Add logging for all errors
+- Input validation for all user inputs
+- Graceful fallback for missing files/dependencies
+- Retries for network requests
 
-## Usage
-
-```python
-from chat_core import ChatService
-
-service = ChatService()
-service.send_message("Hello, world!")
-history = service.get_conversation_history()
-print(history)
-```
-
-## Tests
-
-Run tests with:
-```bash
-pytest tests/test_chat_core.py -v
-```
-
-## Files
-- `chat_core.py` - Core implementation
-- `tests/test_chat_core.py` - Unit tests
+## Error Handling
+- Use try/except blocks for all file I/O and external calls
+- Provide user-friendly error messages
+- Log errors to a file
+- Use custom exception classes for domain-specific errors
