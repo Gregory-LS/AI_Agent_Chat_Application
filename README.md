@@ -1,44 +1,54 @@
-# State Management and Rendering Utility
+# OpenRouter SSE Proxy
 
-This module provides a simple state management store (`createStore`) and a DOM rendering helper (`render`).
+A small Flask server that proxies `/v1/chat/completions` requests to OpenRouter and streams the results back as Server-Sent Events (SSE).
 
-## Functions
+## Requirements
 
-### `createStore(initialState)`
+- Python 3.9+
+- An [OpenRouter API key](https://openrouter.ai/keys)
 
-Creates a store with the given initial state. Returns an object with:
-
-- `getState()` – returns the current state object.
-- `setState(partialState)` – merges `partialState` into the current state and notifies all subscribers.
-- `subscribe(listener)` – adds a listener that is called with the new state after every update. Returns an unsubscribe function.
-
-### `render(store, root, renderFn)`
-
-Renders the view initially and on every state change. 
-
-- `store` – a store created by `createStore`.
-- `root` – a DOM element (or mock with `innerHTML`).
-- `renderFn` – function that receives the current state and returns an HTML string.
-
-Returns an unsubscribe function to stop updating the view.
-
-## Usage Example
-
-```javascript
-const { createStore, render } = require('./static/app');
-
-const store = createStore({ count: 0 });
-const root = document.getElementById('app');
-render(store, root, (state) => `<h1>Count: ${state.count}</h1>`);
-
-store.setState({ count: 1 });
-// DOM updates automatically
-```
-
-## Running Tests
+## Setup
 
 ```bash
-node --experimental-vm-modules tests/test_app.js
+pip install -r requirements.txt
+export OPENROUTER_API_KEY=your_key_here
+python server.py
 ```
 
-(If using CommonJS, simply `node tests/test_app.js`)
+The server listens on port `8000` by default. Use `PORT` to change it.
+
+## Endpoints
+
+- `POST /v1/chat/completions` - proxy to OpenRouter and stream SSE
+- `POST /api/v1/chat/completions` - alias for the same proxy
+- `GET /health` - health check
+
+## Authentication
+
+Pass an `Authorization: Bearer <key>` header, or set the `OPENROUTER_API_KEY` environment variable. The header takes precedence.
+
+## Example
+
+```bash
+curl -N http://localhost:8000/v1/chat/completions \
+  -H 'Authorization: Bearer $OPENROUTER_API_KEY' \
+  -H 'Content-Type: application/json' \
+  -d '{"model": "openai/gpt-4o", "messages": [{"role": "user", "content": "Hello"}]}'
+```
+
+The response is an SSE stream. The proxy forces `stream: true` upstream.
+
+## Environment variables
+
+- `OPENROUTER_API_KEY` - required unless a Bearer token is sent with the request
+- `OPENROUTER_URL` - optional upstream URL override
+- `OPENROUTER_APP_TITLE` - optional app title sent to OpenRouter as `X-Title`
+- `PORT` - HTTP port to bind (default `8000`)
+
+## Tests
+
+```bash
+pytest
+```
+
+CORS is enabled for browser-based clients.
