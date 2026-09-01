@@ -1,53 +1,79 @@
-# Static App - State management and rendering module
+# OpenRouter Proxy with SSE Streaming
 
-This module provides a lightweight state management and DOM rendering utility.
+A FastAPI server that proxies requests to [OpenRouter](https://openrouter.ai/) and streams responses via Server-Sent Events (SSE).
+
+## Features
+
+- OpenAI-compatible endpoint (`/v1/chat/completions`)
+- True SSE streaming using `text/event-stream`
+- Secure API key handling via environment variable
+- Error handling and validation
+- Health check endpoint
+
+## Requirements
+
+- Python 3.9+
+- `fastapi`, `uvicorn`, `httpx`
+
+Install dependencies:
+
+```bash
+pip install fastapi uvicorn httpx
+```
+
+## Configuration
+
+Set the `OPENROUTER_API_KEY` environment variable with your OpenRouter API key:
+
+```bash
+export OPENROUTER_API_KEY="your-api-key-here"
+```
 
 ## Usage
 
-### Import
+Start the server:
 
-```javascript
-import { createStore, render } from './static/app.js';
+```bash
+uvicorn server:app --reload --port 8000
 ```
 
-### createStore(initialState)
+### Endpoints
 
-Creates a reactive store.
+#### `POST /v1/chat/completions`
 
-- `initialState` (Object): initial state object.
-- Returns an object with:
-  - `getState()` - returns a shallow copy of the current state.
-  - `setState(partial)` - merges partial state and notifies subscribers.
-  - `subscribe(subscriber)` - adds a subscriber function. Returns an unsubscribe function.
+Accepts a JSON payload compatible with the OpenAI Chat Completions API. The `stream` parameter is automatically set to `true`.
 
-```javascript
-const store = createStore({ count: 0 });
-store.subscribe((state) => {
-  console.log('State updated:', state);
-});
-store.setState({ count: 1 });
+**Example request:**
+
+```json
+{
+  "model": "openai/gpt-4",
+  "messages": [
+    {"role": "user", "content": "Hello!"}
+  ]
+}
 ```
 
-### render(selector, html)
+**Response:** Server-Sent Events stream with `data:` lines.
 
-Updates the innerHTML of a DOM element identified by selector.
+#### `GET /health`
 
-- `selector` (string): CSS selector for the target element.
-- `html` (string): HTML content to set.
-
-```javascript
-render('#app', '<h1>Hello World</h1>');
-```
+Returns `{"status": "ok"}` if the server is running.
 
 ## Testing
 
-Tests are written with [Vitest](https://vitest.dev/). To run:
+Run tests with `pytest`:
 
 ```bash
-npx vitest run
+pytest tests/
 ```
 
-## Files
+## Project Structure
 
-- `static/app.js` - main module
-- `tests/test_app.test.js` - unit tests
+```
+.
+├── server.py          # FastAPI application
+├── tests/
+│   └── test_server.py # Unit tests
+└── README.md          # This file
+```
