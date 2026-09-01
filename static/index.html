@@ -1,11 +1,56 @@
-<!DOCTYPE html><html lang="en" data-theme="dark"><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Agentic Chat</title><link rel="stylesheet" href="/static/styles.css"></head><body>
-<div class=ap><div class=sb id=sb><div class=sh><h2>Chats</h2><button onclick=newChat()>+</button><button onclick=toggleSb() class=sc>x</button></div><div class=ss><input placeholder=Search oninput=searchC(this.value)></div><div class=cl id=cl></div></div>
-<div class=mn><div class=hd><button onclick=toggleSb() class=sc>&#9776;</button><span class=mb id=mb onclick=mp.classList.add('open')>Select model</span><span class=sp></span><button onclick=toggleSkills()>&#128161;</button><button onclick=showSettings()>&#9881;</button></div>
-<div class=ms id=ms><div class=wl id=wl><h1>Agentic Chat</h1><p>Your AI assistant. Select a model and start chatting!</p></div></div>
-<div class=cp><div class=ir><textarea id=inp placeholder=Message... onkeydown="if(event.key==='Enter'&&!(event.shiftKey||event.ctrlKey||event.metaKey)){event.preventDefault();send()}"></textarea>
-<button class="sb hid" id=sbBtn onclick=stopStream()>Stop</button><button id=sendBtn onclick=send()>Send</button></div></div></div></div>
-<div class=sp id=sp><div class=sp-h><h3>Skills</h3><button class=sc onclick=showSkillEditor()>+ Add</button><button onclick=toggleSkills() class=sc>x</button></div><div class=sp-l id=sl></div></div>
-<div class=mo id=mp><div class=md><h2>Select Model<button class=cl onclick=closeModals()>&times;</button></h2><div class=srch><input placeholder="Search models..." oninput=filterModels(this.value)></div><div class=ml id=ml></div></div></div>
-<div class=mo id=settings><div class=md><h2>Settings<button class=cl onclick=closeModals()>&times;</button></h2><div class=fd><label>API Key</label><input id=apiKey></div><div class=fd><label>Default Model</label><select id=defModel></select></div><button onclick=saveSettings()>Save</button></div></div>
-<div class=mo id=se><div class=md><h2 id=seTitle>Edit Skill<button class=cl onclick=closeModals()>&times;</button></h2><div class=fd><label>Name</label><input id=skName maxlength=80></div><div class=fd><label>Description</label><input id=skDesc maxlength=300></div><div class=fd><label>System Prompt</label><textarea id=skPrompt rows=6></textarea></div><button onclick=saveSkill()>Save</button></div></div>
-<script src="/static/app.js"></script></body></html>
+<!doctype html>
+<html lang='en'>
+<head>
+  <meta charset='utf-8'>
+  <meta name='viewport' content='width=device-width, initial-scale=1'>
+  <title>Skills Drawer</title>
+  <link rel='stylesheet' href='/static/styles.css'>
+</head>
+<body>
+  <main class='page'>
+    <h1>Skills Manager</h1>
+    <p>Open the skills drawer to manage your skills.</p>
+    <button id='open-drawer' class='btn btn-primary' type='button' aria-haspopup='dialog' aria-controls='skills-drawer'>Open Skills Drawer</button>
+  </main>
+
+  <div class='drawer-overlay' id='drawer-overlay' hidden></div>
+  <aside class='drawer' id='skills-drawer' role='dialog' aria-modal='true' aria-labelledby='drawer-title' hidden>
+    <header class='drawer__header'>
+      <h2 id='drawer-title'>Skills</h2>
+      <button id='close-drawer' class='drawer__close' type='button' aria-label='Close drawer'>&times;</button>
+    </header>
+    <div class='drawer__content'>
+      <form id='skill-form' class='skill-form'>
+        <input type='hidden' id='skill-id'>
+        <div class='form-group'>
+          <label for='skill-name'>Name *</label>
+          <input id='skill-name' name='name' type='text' required maxlength='100' placeholder='e.g. Python'>
+        </div>
+        <div class='form-group'>
+          <label for='skill-category'>Category</label>
+          <input id='skill-category' name='category' type='text' maxlength='50' placeholder='e.g. Backend'>
+        </div>
+        <div class='form-group'>
+          <label for='skill-proficiency'>Proficiency (1-5)</label>
+          <input id='skill-proficiency' name='proficiency' type='number' min='1' max='5' value='3' required>
+        </div>
+        <div class='form-group'>
+          <label for='skill-description'>Description</label>
+          <textarea id='skill-description' name='description' rows='3' maxlength='500' placeholder='Short description'></textarea>
+        </div>
+        <div class='form-actions'>
+          <button type='submit' class='btn btn-primary' id='save-skill'>Save Skill</button>
+          <button type='button' class='btn btn-secondary' id='reset-form'>Reset</button>
+        </div>
+        <p id='form-message' class='form-message' role='status'></p>
+      </form>
+      <section class='skills-section'>
+        <h3>Saved Skills</h3>
+        <ul id='skills-list' class='skills-list'></ul>
+        <p id='empty-state' class='empty-state'>No skills added yet.</p>
+      </section>
+    </div>
+  </aside>
+  <script src='/static/app.js'></script>
+</body>
+</html>

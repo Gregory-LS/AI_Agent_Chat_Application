@@ -1,129 +1,158 @@
-#!/usr/bin/env python3
-"""TaskBuddy server.
+from __future__ import annotations
 
-A tiny HTTP server that serves a polished front-end and a simulated JSON API.
-Uses only the Python standard library, so no dependencies need to be installed.
-"""
 import json
 import os
-import time
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+import uuid
+from datetime import datetime, timezone
 from pathlib import Path
-from urllib.parse import parse_qs, unquote, urlparse
+from typing import Any, Dict, List, Optional
 
-ROOT = Path(__file__).resolve().parent
+from flask import Flask, jsonify, request, send_from_directory
+from werkzeug.exceptions import BadRequest, NotFound
 
-MIME_TYPES = {
-    ".html": "text/html; charset=utf-8",
-    ".css": "text/css; charset=utf-8",
-    ".js": "application/javascript; charset=utf-8",
-}
+DATA_DIR = Path(os.environ.get('SKILLS_DATA_DIR', 'data'))
+DEFAULT_DATA_FILE = DATA_DIR / 'skills.json'
 
 
-def _is_relative_to(path: Path, directory: Path) -> bool:
-    """Return True if *path* is inside *directory* (works on older Python)."""
+def _utcnow() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+def _load_skills(data_file: Path) -> List[Dict[str, Any]]:
+    if not data_file.exists():
+        return []
     try:
-        common = os.path.commonpath([str(path.resolve()), str(directory.resolve())])
-    except ValueError:
-        return False
-    return common == str(directory.resolve())
+        with data_file.open('r', encoding='utf-8') as handle:
+            data = json.load(handle)
+    except (json.JSONDecodeError, OSError):
+        return []
+    if isinstance(data, list):
+        return [item for item in data if isinstance(item, dict)]
+    return []
 
 
-class AppHandler(BaseHTTPRequestHandler):
-    """HTTP request handler for TaskBuddy."""
+def _save_skills(skills: List[Dict[str, Any]], data_file: Path) -> None:
+    data_file.parent.mkdir(parents=True, exist_ok=True)
+    with data_file.open('w', encoding='utf-8') as handle:
+        json.dump(skills, handle, indent=2, ensure_ascii=False)
 
-    def do_GET(self) -> None:  # noqa: N802 - name is part of BaseHTTPRequestHandler
-        parsed = urlparse(self.path)
-        path = unquote(parsed.path)
 
-        if path == "/api/data":
-            self._handle_api(parsed)
-        elif path == "/":
-            self._serve_file(ROOT / "index.html")
-        elif path.startswith("/static/"):
-            relative = path[len("/static/"):]
-            requested = (ROOT / "static" / relative).resolve()
-            static_root = (ROOT / "static").resolve()
-            if not _is_relative_to(requested, static_root):
-                self.send_error(403, "Forbidden")
-            else:
-                self._serve_file(requested)
-        else:
-            self.send_error(404, "Not Found")
+def _find_skill_index(skills: List[Dict[str, Any]], skill_id: str) -> Optional[int]:
+    for index, skill in enumerate(skills):
+        if skill.get('id') == skill_id:
+            return index
+    return None
 
-    def _serve_file(self, file_path: Path) -> None:
-        """Serve a static file if it exists."""
-        if not file_path.is_file():
-            self.send_error(404, "Not Found")
-            return
 
-        ext = file_path.suffix
-        content_type = MIME_TYPES.get(ext, "application/octet-stream")
-        body = file_path.read_bytes()
+def _find_skill(skills: List[Dict[str, Any]], skill_id: str) -> Optional[Dict[str, Any]]:
+    index = _find_skill_index(skills, skill_id)
+    if index is None:
+        return None
+    return skills[index]
 
-        self.send_response(200)
-        self.send_header("Content-Type", content_type)
-        self.send_header("Content-Length", str(len(body)))
-        self.send_header("Cache-Control", "no-cache")
-        self.end_headers()
-        self.wfile.write(body)
 
-    def _handle_api(self, parsed) -> None:
-        """Handle the /api/data endpoint."""
-        params = parse_qs(parsed.query)
+def validate_skill_payload(payload: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    if not isinstance(payload, dict):
+        raise BadRequest('A JSON object is required.')
+    if 'name' not in payload:
+        raise BadRequest('Skill name is required.')
+    name = str(payload.get('name', '')).strip()
+    if not name:
+        raise BadRequest('Skill name cannot be empty.')
+    if len(name) > 100:
+        raise BadRequest('Skill name must be 100 characters or fewer.')
+    category = str(payload.get('category', 'General')).strip() or 'General'
+    if len(category) > 50:
+        raise BadRequest('Category must be 50 characters or fewer.')
+    proficiency = payload.get('proficiency', 1)
+    try:
+        proficiency = int(proficiency)
+    except (TypeError, ValueError):
+        raise BadRequest('Proficiency must be an integer.')
+    if proficiency < 1 or proficiency > 5:
+        raise BadRequest('Proficiency must be between 1 and 5.')
+    description = str(payload.get('description', '')).strip()
+    if len(description) > 500:
+        raise BadRequest('Description must be 500 characters or fewer.')
+    return {
+        'name': name,
+        'category': category,
+        'proficiency': proficiency,
+        'description': description,
+    }
 
-        if params.get("fail", ["0"])[0] == "1":
-            self.send_error(500, "Simulated server error")
-            return
 
-        try:
-            delay = min(max(float(params.get("delay", ["0.6"])[0]), 0.0), 3.0)
-        except ValueError:
-            delay = 0.6
+def create_app(data_file: Optional[Path] = None) -> Flask:
+    app = Flask(__name__, static_folder='static', static_url_path='/static')
+    app.config['DATA_FILE'] = Path(data_file) if data_file else DEFAULT_DATA_FILE
 
-        time.sleep(delay)
+    @app.get('/')
+    def index():
+        return send_from_directory(app.static_folder, 'index.html')
 
-        payload = {
-            "message": "Data loaded successfully",
-            "items": [
-                {"id": 1, "title": "Design the UI"},
-                {"id": 2, "title": "Implement loading state"},
-                {"id": 3, "title": "Add error toast"},
-                {"id": 4, "title": "Audit accessibility"},
-            ],
+    @app.get('/api/skills')
+    def list_skills():
+        skills = _load_skills(app.config['DATA_FILE'])
+        return jsonify({'skills': skills})
+
+    @app.post('/api/skills')
+    def create_skill():
+        skills = _load_skills(app.config['DATA_FILE'])
+        payload = validate_skill_payload(request.get_json(silent=True))
+        now = _utcnow()
+        skill = {
+            'id': str(uuid.uuid4()),
+            **payload,
+            'created_at': now,
+            'updated_at': now,
         }
-        body = json.dumps(payload).encode("utf-8")
+        skills.append(skill)
+        _save_skills(skills, app.config['DATA_FILE'])
+        return jsonify(skill), 201
 
-        self.send_response(200)
-        self.send_header("Content-Type", "application/json; charset=utf-8")
-        self.send_header("Content-Length", str(len(body)))
-        self.send_header("Cache-Control", "no-store")
-        self.end_headers()
-        self.wfile.write(body)
+    @app.get('/api/skills/<skill_id>')
+    def get_skill(skill_id: str):
+        skills = _load_skills(app.config['DATA_FILE'])
+        skill = _find_skill(skills, skill_id)
+        if skill is None:
+            raise NotFound('Skill not found.')
+        return jsonify(skill)
 
-    def log_message(self, fmt: str, *args) -> None:
-        """Suppress request logging so tests remain quiet."""
-        pass
+    @app.put('/api/skills/<skill_id>')
+    def update_skill(skill_id: str):
+        skills = _load_skills(app.config['DATA_FILE'])
+        index = _find_skill_index(skills, skill_id)
+        if index is None:
+            raise NotFound('Skill not found.')
+        payload = validate_skill_payload(request.get_json(silent=True))
+        skill = {**skills[index], **payload, 'updated_at': _utcnow()}
+        skills[index] = skill
+        _save_skills(skills, app.config['DATA_FILE'])
+        return jsonify(skill)
+
+    @app.delete('/api/skills/<skill_id>')
+    def delete_skill(skill_id: str):
+        skills = _load_skills(app.config['DATA_FILE'])
+        index = _find_skill_index(skills, skill_id)
+        if index is None:
+            raise NotFound('Skill not found.')
+        del skills[index]
+        _save_skills(skills, app.config['DATA_FILE'])
+        return jsonify({'deleted': True, 'id': skill_id})
+
+    @app.errorhandler(BadRequest)
+    def handle_bad_request(error: BadRequest):
+        return jsonify({'error': error.description}), 400
+
+    @app.errorhandler(NotFound)
+    def handle_not_found(error: NotFound):
+        return jsonify({'error': error.description}), 404
+
+    return app
 
 
-def create_server(host: str = "127.0.0.1", port: int = 0) -> ThreadingHTTPServer:
-    """Create a TaskBuddy HTTP server."""
-    return ThreadingHTTPServer((host, port), AppHandler)
+app = create_app()
 
 
-def main() -> None:
-    """Run the TaskBuddy server on localhost."""
-    port = int(os.environ.get("PORT", "8000"))
-    server = create_server(host="127.0.0.1", port=port)
-    url = f"http://127.0.0.1:{port}"
-    print(f"TaskBuddy is running at {url}")
-    try:
-        server.serve_forever()
-    except KeyboardInterrupt:
-        print("Shutting down TaskBuddy.")
-    finally:
-        server.server_close()
-
-
-if __name__ == "__main__":
-    main()
+if __name__ == '__main__':
+    app.run(debug=True)
