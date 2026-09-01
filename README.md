@@ -1,55 +1,34 @@
-# Attachment Handling Module
+# Double Application
 
-This module provides a simple way to handle file attachments (images and text files) in a Python application.
-
-## Features
-
-- Validate image files (JPEG, PNG, GIF, BMP) using PIL
-- Validate text files (TXT, MD, CSV, LOG) for UTF-8 encoding
-- Configurable size limits (default: 5 MB for images, 1 MB for text)
-- Automatic extension detection and handling
-- Atomic file copy to a designated upload directory
+A simple Python application that doubles an integer given as a command-line argument.
 
 ## Usage
 
-```python
-from attachments import AttachmentHandler
+```bash
+python app.py <integer>
+```
 
-handler = AttachmentHandler(upload_dir="./uploads")
+Example:
 
-# Handle an image
-saved_path = handler.handle_image("photo.png")
-print(f"Image saved to {saved_path}")
-
-# Handle a text file
-saved_path = handler.handle_text("notes.txt")
-print(f"Text saved to {saved_path}")
-
-# Automatically detect type
-saved_path = handler.save_attachment("file.csv")
-print(f"Attachment saved to {saved_path}")
+```bash
+$ python app.py 5
+10
 ```
 
 ## Error Handling
 
-- `FileNotFoundError`: File does not exist.
-- `ValueError`: Invalid extension, size limit exceeded, or corrupt file.
+- If no argument is provided, the program prints usage information and exits with code 1.
+- If the argument is not a valid integer, an error message is printed to stderr and the program exits with code 1.
+- The `double` function itself raises `TypeError` if the input is not an integer.
 
 ## Testing
 
-Run tests with pytest:
+Run tests using pytest:
 
 ```bash
-pytest tests/test_attachments.py -v
+pytest tests/
 ```
 
-## Dependencies
-
-- Python 3.8+
-- Pillow (for image validation)
-
-Install with:
-
-```bash
-pip install Pillow
-```
+Tests cover:
+- Positive, zero, negative, and large integers
+- Non-integer inputs (float, string, None) raise `TypeError`
