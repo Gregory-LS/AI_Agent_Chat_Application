@@ -1,71 +1,47 @@
-# Agentic Chat
+# TaskBuddy
 
-A Claude-style chat application powered by OpenRouter. Chat with hundreds of models, create custom skills, and manage conversations.
+A small, dependency-free web app that shows how to add polish to any web UI:
 
-## Features
+- **Loading states** — a `role=status` region with a spinner and disabled button while data is fetched.
+- **Error toasts** — an `role=alert` toast that announces server errors and disappears automatically.
+- **Accessibility** — skip link, semantic landmarks, focus-visible styles, `aria-live`, `aria-busy`, and reduced-motion support.
 
-- **Chat** — stream responses, stop mid-stream, copy messages, message metadata
-- **Model picker** — browse all OpenRouter models, grouped by provider, searchable, with context/pricing info
-- **Skills** — enable/disable built-in skills or create your own custom system prompts
-- **Conversations** — sidebar with search, rename, delete, auto-title from first message
-- **Attachments** — upload images (sent to vision-capable models), text/code files (inlined as context)
-- **Settings** — API key management, default model, dark/light theme
-- **Export/Import** — download conversations as JSON or Markdown, restore from backup
-
-## Quick start
+## Run the app
 
 ```bash
-pip install httpx
-set OPENROUTER_API_KEY=sk-or-...
-python server.py
+python app.py
 ```
 
-Open http://localhost:8000 in your browser.
+Then open <http://127.0.0.1:8000>.
 
-## Configuration
+## API
 
-| Variable | Default | Description |
-|---|---|---|
-| `OPENROUTER_API_KEY` | — | Your OpenRouter API key (required) |
-| `HOST` | `127.0.0.1` | Server bind address |
-| `PORT` | `8000` | Server port |
+`GET /api/data` returns a JSON object with an `items` list.
 
-The API key can also be set via the Settings UI (persisted to `data/config.json`).
+Query parameters:
 
-## File layout
+| Parameter | Default | Description                             |
+|-----------|---------|-----------------------------------------|
+| `delay`   | `0.6`   | Simulated server latency in seconds     |
+| `fail`    | `0`     | Set to `1` to force a 500 error         |
 
-```
-├── server.py              # Python backend (stdlib + httpx)
-├── static/
-│   ├── index.html         # Single-page app markup
-│   ├── styles.css         # Dark/light theme CSS
-│   └── app.js             # Frontend JavaScript
-├── data/
-│   ├── config.json        # API key, default model
-│   ├── conversations/     # Per-conversation JSON files
-│   ├── skills.json        # Custom skills
-│   └── attachments/       # Uploaded images
-└── README.md
+Example:
+
+```bash
+curl http://127.0.0.1:8000/api/data?delay=0&fail=1
 ```
 
-## API endpoints
+## Run the tests
 
-| Method | Path | Description |
-|---|---|---|
-| GET | `/api/models` | List OpenRouter models |
-| GET | `/api/balance` | Check API key balance |
-| GET/PUT | `/api/config` | Read/write settings |
-| GET/POST | `/api/conversations` | List/create conversations |
-| GET/PATCH/DELETE | `/api/conversations/:id` | Get/update/delete conversation |
-| POST | `/api/conversations/import` | Import a conversation backup |
-| GET | `/api/conversations/:id/export?format=json|markdown` | Export |
-| GET/POST | `/api/skills` | List/create skills |
-| PATCH/DELETE | `/api/skills/:id` | Update/delete skill |
-| POST | `/api/attachments` | Upload an attachment |
-| POST | `/api/chat` | Stream a chat response (SSE) |
+```bash
+python -m unittest discover -s tests -v
+```
 
-## Requirements
+## Accessibility notes
 
-- Python 3.10+
-- httpx (install via `pip install httpx`)
-- OpenRouter API key (get one at https://openrouter.ai/keys)
+- The skip link lets keyboard users jump to the main content.
+- The loading region uses `role=status` and `aria-live=polite`.
+- The error toast uses `role=alert` and `aria-live=assertive`.
+- Focus indicators are visible and high contrast.
+- `prefers-reduced-motion` is respected.
+- The button is disabled during loading to avoid duplicate requests.
