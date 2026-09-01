@@ -1,11 +1,200 @@
-<!DOCTYPE html><html lang="en" data-theme="dark"><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Agentic Chat</title><link rel="stylesheet" href="/static/styles.css"></head><body>
-<div class=ap><div class=sb id=sb><div class=sh><h2>Chats</h2><button onclick=newChat()>+</button><button onclick=toggleSb() class=sc>x</button></div><div class=ss><input placeholder=Search oninput=searchC(this.value)></div><div class=cl id=cl></div></div>
-<div class=mn><div class=hd><button onclick=toggleSb() class=sc>&#9776;</button><span class=mb id=mb onclick=mp.classList.add('open')>Select model</span><span class=sp></span><button onclick=toggleSkills()>&#128161;</button><button onclick=showSettings()>&#9881;</button></div>
-<div class=ms id=ms><div class=wl id=wl><h1>Agentic Chat</h1><p>Your AI assistant. Select a model and start chatting!</p></div></div>
-<div class=cp><div class=ir><textarea id=inp placeholder=Message... onkeydown="if(event.key==='Enter'&&!(event.shiftKey||event.ctrlKey||event.metaKey)){event.preventDefault();send()}"></textarea>
-<button class="sb hid" id=sbBtn onclick=stopStream()>Stop</button><button id=sendBtn onclick=send()>Send</button></div></div></div></div>
-<div class=sp id=sp><div class=sp-h><h3>Skills</h3><button class=sc onclick=showSkillEditor()>+ Add</button><button onclick=toggleSkills() class=sc>x</button></div><div class=sp-l id=sl></div></div>
-<div class=mo id=mp><div class=md><h2>Select Model<button class=cl onclick=closeModals()>&times;</button></h2><div class=srch><input placeholder="Search models..." oninput=filterModels(this.value)></div><div class=ml id=ml></div></div></div>
-<div class=mo id=settings><div class=md><h2>Settings<button class=cl onclick=closeModals()>&times;</button></h2><div class=fd><label>API Key</label><input id=apiKey></div><div class=fd><label>Default Model</label><select id=defModel></select></div><button onclick=saveSettings()>Save</button></div></div>
-<div class=mo id=se><div class=md><h2 id=seTitle>Edit Skill<button class=cl onclick=closeModals()>&times;</button></h2><div class=fd><label>Name</label><input id=skName maxlength=80></div><div class=fd><label>Description</label><input id=skDesc maxlength=300></div><div class=fd><label>System Prompt</label><textarea id=skPrompt rows=6></textarea></div><button onclick=saveSkill()>Save</button></div></div>
-<script src="/static/app.js"></script></body></html>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chat UI</title>
+    <style>
+        /* Reset and base styles */
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            height: 100vh;
+            display: flex;
+            background-color: #f0f2f5;
+        }
+
+        /* Sidebar */
+        .sidebar {
+            width: 260px;
+            background-color: #ffffff;
+            border-right: 1px solid #ddd;
+            display: flex;
+            flex-direction: column;
+            padding: 16px;
+        }
+        .sidebar h2 {
+            font-size: 18px;
+            margin-bottom: 16px;
+            color: #333;
+        }
+        .conversation-list {
+            list-style: none;
+            flex: 1;
+            overflow-y: auto;
+        }
+        .conversation-item {
+            padding: 10px 12px;
+            border-radius: 8px;
+            cursor: pointer;
+            margin-bottom: 4px;
+            transition: background-color 0.2s;
+            color: #444;
+        }
+        .conversation-item:hover {
+            background-color: #e9ecef;
+        }
+        .conversation-item.active {
+            background-color: #007bff;
+            color: #fff;
+        }
+
+        /* Main chat area */
+        .chat-container {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            background-color: #ffffff;
+            margin: 8px;
+            border-radius: 12px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+        }
+
+        .chat-header {
+            padding: 16px 20px;
+            border-bottom: 1px solid #eee;
+            font-weight: 600;
+            color: #333;
+            font-size: 16px;
+        }
+
+        .message-area {
+            flex: 1;
+            padding: 20px;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .message {
+            max-width: 70%;
+            padding: 10px 14px;
+            border-radius: 18px;
+            line-height: 1.4;
+            font-size: 14px;
+        }
+        .message.user {
+            align-self: flex-end;
+            background-color: #007bff;
+            color: #fff;
+            border-bottom-right-radius: 4px;
+        }
+        .message.bot {
+            align-self: flex-start;
+            background-color: #f1f3f5;
+            color: #333;
+            border-bottom-left-radius: 4px;
+        }
+
+        .input-area {
+            display: flex;
+            padding: 12px 20px;
+            border-top: 1px solid #eee;
+            gap: 8px;
+        }
+        .input-area input {
+            flex: 1;
+            padding: 10px 14px;
+            border: 1px solid #ccc;
+            border-radius: 24px;
+            font-size: 14px;
+            outline: none;
+            transition: border-color 0.2s;
+        }
+        .input-area input:focus {
+            border-color: #007bff;
+        }
+        .input-area button {
+            padding: 10px 20px;
+            background-color: #007bff;
+            color: #fff;
+            border: none;
+            border-radius: 24px;
+            font-size: 14px;
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+        .input-area button:hover {
+            background-color: #0056b3;
+        }
+    </style>
+</head>
+<body>
+    <!-- Sidebar -->
+    <aside class="sidebar">
+        <h2>Conversations</h2>
+        <ul class="conversation-list" id="conversationList">
+            <!-- Example conversation items (static for shell) -->
+            <li class="conversation-item active">Chat 1</li>
+            <li class="conversation-item">Chat 2</li>
+            <li class="conversation-item">Chat 3</li>
+        </ul>
+    </aside>
+
+    <!-- Main chat container -->
+    <main class="chat-container">
+        <div class="chat-header" id="chatHeader">Chat 1</div>
+        <div class="message-area" id="messageArea">
+            <!-- Example messages (static for shell) -->
+            <div class="message bot">Hello! How can I help you today?</div>
+            <div class="message user">I need assistance with my account.</div>
+            <div class="message bot">Sure, I can help with that. What seems to be the issue?</div>
+        </div>
+        <div class="input-area">
+            <input type="text" id="messageInput" placeholder="Type a message..." />
+            <button id="sendButton">Send</button>
+        </div>
+    </main>
+
+    <script>
+        // Basic interactivity for the chat UI shell
+        // This script provides minimal functionality: send button clears input and adds a user message.
+        document.addEventListener('DOMContentLoaded', function() {
+            const messageInput = document.getElementById('messageInput');
+            const sendButton = document.getElementById('sendButton');
+            const messageArea = document.getElementById('messageArea');
+
+            function addMessage(text, sender) {
+                const messageDiv = document.createElement('div');
+                messageDiv.className = 'message ' + sender;
+                messageDiv.textContent = text;
+                messageArea.appendChild(messageDiv);
+                messageArea.scrollTop = messageArea.scrollHeight;
+            }
+
+            function handleSend() {
+                const text = messageInput.value.trim();
+                if (text === '') return;
+                addMessage(text, 'user');
+                messageInput.value = '';
+                // Simulate a bot response after a short delay
+                setTimeout(function() {
+                    addMessage('This is a simulated response.', 'bot');
+                }, 500);
+            }
+
+            sendButton.addEventListener('click', handleSend);
+            messageInput.addEventListener('keypress', function(e) {
+                if (e.key === 'Enter') {
+                    handleSend();
+                }
+            });
+        });
+    </script>
+</body>
+</html>
