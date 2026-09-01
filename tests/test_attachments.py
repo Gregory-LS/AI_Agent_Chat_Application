@@ -1,111 +1,47 @@
-from pathlib import Path
+from django.test import TestCase, Client
+from django.contrib.auth.models import User
+from django.core.files.uploadedfile import SimpleUploadedFile
+from app.models import Issue, Project, Attachment
 
-import pytest
+class AttachmentTests(TestCase):
+    def setUp(self):
+        self.client = Client()
+        self.user = User.objects.create_user(username='testuser', password='testpass')
+        self.project = Project.objects.create(name='Test Project')
+        self.issue = Issue.objects.create(project=self.project, title='Test Issue')
+        self.client.login(username='testuser', password='testpass')
 
-from attachments import (
-    Attachment,
-    AttachmentNotFoundError,
-    AttachmentStore,
-    ValidationError,
-)
+    def test_upload_attachment(self):
+        file = SimpleUploadedFile('test.txt', b'file content')
+        response = self.client.post(f'/issue/{self.issue.id}/upload/', {'file': file})
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertIn('id', data)
+        self.assertEqual(data['file_name'], 'attachments/test.txt')
 
+    def test_upload_attachment_unauthenticated(self):
+        self.client.logout()
+        file = SimpleUploadedFile('test.txt', b'file content')
+        response = self.client.post(f'/issue/{self.issue.id}/upload/', {'file': file})
+        self.assertRedirects(response, '/accounts/login/?next=/issue/1/upload/')
 
-@pytest.fixture()
-def store(tmp_path: Path) -> AttachmentStore:
-    return AttachmentStore(storage_dir=tmp_path / 'attachments')
+    def test_delete_attachment(self):
+        file = SimpleUploadedFile('test.txt', b'file content')
+        attachment = Attachment.objects.create(issue=self.issue, file=file, uploaded_by=self.user)
+        response = self.client.post(f'/attachment/{attachment.id}/delete/')
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(Attachment.objects.count(), 0)
 
+    def test_delete_attachment_permission_denied(self):
+        other_user = User.objects.create_user(username='other', password='pass')
+        file = SimpleUploadedFile('test.txt', b'file content')
+        attachment = Attachment.objects.create(issue=self.issue, file=file, uploaded_by=other_user)
+        response = self.client.post(f'/attachment/{attachment.id}/delete/')
+        self.assertEqual(response.status_code, 403)
 
-def build_attachment(**overrides) -> Attachment:
-    values = {
-        'filename': 'notes.txt',
-        'content_type': 'text/plain',
-        'data': b'hello attachments',
-    }
-    values.update(overrides)
-    return Attachment(**values)
-
-
-def test_save_and_load_round_trip(store):
-    original = build_attachment(metadata={'user_id': 42, 'labels': ['docs']})
-
-    saved = store.save(original)
-
-    loaded = store.load(saved.attachment_id)
-    assert loaded.attachment_id == saved.attachment_id
-    assert loaded.filename == original.filename
-    assert loaded.content_type == original.content_type
-    assert loaded.data == original.data
-    assert loaded.metadata == original.metadata
-
-
-def test_save_generates_valid_id(store):
-    saved = store.save(build_attachment())
-
-    assert len(saved.attachment_id) > 0
-    assert all(c.isalnum() or c in '-_' for c in saved.attachment_id)
-
-
-def test_save_preserves_provided_id(store):
-    saved = store.save(build_attachment(attachment_id='my-file'))
-
-    assert saved.attachment_id == 'my-file'
-    assert store.load('my-file').filename == 'notes.txt'
-
-
-def test_rejects_too_large(tmp_path):
-    store = AttachmentStore(tmp_path / 'medium', max_size=4)
-
-    with pytest.raises(ValidationError, match='maximum allowed'):
-        store.save(build_attachment(data=b'12345'))
-
-
-def test_rejects_disallowed_content_type(store):
-    with pytest.raises(ValidationError, match='content type'):
-        store.save(build_attachment(content_type='application/x-unknown'))
-
-
-@pytest.mark.parametrize(
-    'filename',
-    ['', '.', '..', '../evil.sh', 'dir/evil.sh', 'evil.sh' + chr(92)],
-)
-def test_rejects_unsafe_filename(store, filename):
-    with pytest.raises(ValidationError, match='filename'):
-        store.save(build_attachment(filename=filename))
-
-
-def test_load_rejects_invalid_id(store):
-    with pytest.raises(ValueError):
-        store.load('../bad')
-
-
-def test_load_missing_attachment(store):
-    with pytest.raises(AttachmentNotFoundError):
-        store.load('doesnotexist')
-
-
-def test_delete_removes_attachment(store):
-    saved = store.save(build_attachment())
-
-    assert store.exists(saved.attachment_id) is True
-    assert store.delete(saved.attachment_id) is True
-    assert store.exists(saved.attachment_id) is False
-    assert store.delete(saved.attachment_id) is False
-
-
-def test_list_attachments(store):
-    first = store.save(build_attachment(filename='a.txt', data=b'a'))
-    second = store.save(build_attachment(filename='b.txt', data=b'bb'))
-
-    assert set(store.list_ids()) == {first.attachment_id, second.attachment_id}
-    assert len(store.list_attachments()) == 2
-
-
-def test_attachment_from_file(tmp_path):
-    path = tmp_path / 'sample.bin'
-    path.write_bytes(bytes([0, 1]))
-
-    attachment = Attachment.from_file(path, content_type='application/octet-stream')
-
-    assert attachment.filename == 'sample.bin'
-    assert attachment.data == bytes([0, 1])
-    assert attachment.size == 2
+    def test_delete_attachment_unauthenticated(self):
+        self.client.logout()
+        file = SimpleUploadedFile('test.txt', b'file content')
+        attachment = Attachment.objects.create(issue=self.issue, file=file, uploaded_by=self.user)
+        response = self.client.post(f'/attachment/{attachment.id}/delete/')
+        self.assertRedirects(response, f'/accounts/login/?next=/attachment/{attachment.id}/delete/')
