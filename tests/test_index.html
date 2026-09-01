@@ -1,0 +1,35 @@
+import unittest
+import os
+import html.parser
+
+class TestHTMLValidity(unittest.TestCase):
+    """Basic tests to ensure index.html is valid HTML."""
+
+    def setUp(self):
+        self.html_path = os.path.join(os.path.dirname(__file__), '..', 'static', 'index.html')
+        with open(self.html_path, 'r') as f:
+            self.html_content = f.read()
+
+    def test_file_exists(self):
+        self.assertTrue(os.path.exists(self.html_path))
+
+    def test_html_parses(self):
+        """Check that the HTML can be parsed without syntax errors."""
+        parser = html.parser.HTMLParser()
+        try:
+            parser.feed(self.html_content)
+        except Exception as e:
+            self.fail(f'HTML parsing failed: {e}')
+
+    def test_contains_chat_container(self):
+        self.assertIn('chat-container', self.html_content)
+
+    def test_contains_input_and_button(self):
+        self.assertIn('messageInput', self.html_content)
+        self.assertIn('sendButton', self.html_content)
+
+    def test_contains_script(self):
+        self.assertIn('<script>', self.html_content)
+
+if __name__ == '__main__':
+    unittest.main()
