@@ -1,55 +1,52 @@
-# Attachment Handling Module
+# Conversation Sidebar
 
-This module provides a simple way to handle file attachments (images and text files) in a Python application.
+A React component for displaying a list of conversations.
 
 ## Features
 
-- Validate image files (JPEG, PNG, GIF, BMP) using PIL
-- Validate text files (TXT, MD, CSV, LOG) for UTF-8 encoding
-- Configurable size limits (default: 5 MB for images, 1 MB for text)
-- Automatic extension detection and handling
-- Atomic file copy to a designated upload directory
+- View list of conversations
+- Search/filter conversations by name
+- Click to select a conversation
+- Create new conversation
+- Shows last message preview and timestamp
 
 ## Usage
 
-```python
-from attachments import AttachmentHandler
+```jsx
+import Sidebar from './components/Sidebar';
 
-handler = AttachmentHandler(upload_dir="./uploads")
-
-# Handle an image
-saved_path = handler.handle_image("photo.png")
-print(f"Image saved to {saved_path}")
-
-# Handle a text file
-saved_path = handler.handle_text("notes.txt")
-print(f"Text saved to {saved_path}")
-
-# Automatically detect type
-saved_path = handler.save_attachment("file.csv")
-print(f"Attachment saved to {saved_path}")
+<Sidebar
+  conversations={conversations}
+  onSelect={(id) => console.log('Selected:', id)}
+  onCreateNew={() => console.log('New conversation')}
+/>
 ```
 
-## Error Handling
+## Props
 
-- `FileNotFoundError`: File does not exist.
-- `ValueError`: Invalid extension, size limit exceeded, or corrupt file.
+| Prop | Type | Description |
+|------|------|-------------|
+| conversations | Array | Array of conversation objects: { id, name, lastMessage?, updatedAt? } |
+| onSelect | Function | Called when a conversation is clicked, receives the conversation id |
+| onCreateNew | Function | Called when the "+ New" button is clicked |
+| currentUserId | (optional) | The current user's id (for future use) |
 
-## Testing
+## Development
 
-Run tests with pytest:
+Install dependencies:
 
 ```bash
-pytest tests/test_attachments.py -v
+npm install
 ```
 
-## Dependencies
-
-- Python 3.8+
-- Pillow (for image validation)
-
-Install with:
+Run tests:
 
 ```bash
-pip install Pillow
+npm test
 ```
+
+## Files
+
+- `src/components/Sidebar.jsx` - React component
+- `src/components/Sidebar.css` - Styles
+- `tests/test_Sidebar.jsx` - Unit tests
