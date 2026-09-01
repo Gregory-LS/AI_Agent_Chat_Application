@@ -1,52 +1,51 @@
-# Conversation Sidebar
+# Model Picker Component
 
-A React component for displaying a list of conversations.
+A reusable React component for selecting an AI model from a dropdown list.
 
-## Features
+## Installation
 
-- View list of conversations
-- Search/filter conversations by name
-- Click to select a conversation
-- Create new conversation
-- Shows last message preview and timestamp
+Copy the `src/components/ModelPicker.tsx` and `src/components/ModelPicker.module.css` into your project.
 
 ## Usage
 
-```jsx
-import Sidebar from './components/Sidebar';
+```tsx
+import { ModelPicker } from './components';
 
-<Sidebar
-  conversations={conversations}
-  onSelect={(id) => console.log('Selected:', id)}
-  onCreateNew={() => console.log('New conversation')}
+const models = ['GPT-3', 'GPT-4', 'BERT', 'T5'];
+const [selected, setSelected] = useState<string>('');
+
+<ModelPicker
+  models={models}
+  selectedModel={selected}
+  onSelect={setSelected}
+  disabled={false}
+  placeholder="Pick a model"
 />
 ```
 
 ## Props
 
-| Prop | Type | Description |
-|------|------|-------------|
-| conversations | Array | Array of conversation objects: { id, name, lastMessage?, updatedAt? } |
-| onSelect | Function | Called when a conversation is clicked, receives the conversation id |
-| onCreateNew | Function | Called when the "+ New" button is clicked |
-| currentUserId | (optional) | The current user's id (for future use) |
+| Prop          | Type       | Default           | Description                          |
+|---------------|------------|-------------------|--------------------------------------|
+| `models`      | `string[]` | (required)        | Array of model names to display      |
+| `selectedModel` | `string`   | -               | Currently selected model             |
+| `onSelect`    | `(model: string) => void` | (required) | Callback when a model is selected |
+| `disabled`    | `boolean`  | `false`           | Disables the select                  |
+| `placeholder` | `string`   | `'Select a model'` | Placeholder text for unselected state |
 
-## Development
+## Testing
 
-Install dependencies:
-
-```bash
-npm install
-```
-
-Run tests:
+Run tests with:
 
 ```bash
-npm test
+npm test -- --testPathPattern=ModelPicker
 ```
 
-## Files
-
-- `src/components/Sidebar.jsx` - React component
-- `src/components/Sidebar.css` - Styles
-- `tests/test_Sidebar.jsx` - Unit tests
+Covered behaviors:
+- Rendering all options
+- Displaying the selected value
+- Triggering the `onSelect` callback with the chosen model
+- Not triggering on placeholder selection
+- Disabled state
+- Custom placeholder
+- Empty models list
