@@ -1,47 +1,66 @@
-# TaskBuddy
+# Skills Drawer Component
 
-A small, dependency-free web app that shows how to add polish to any web UI:
+A reusable React component that provides a drawer panel for managing skills with full CRUD (Create, Read, Update, Delete) operations.
 
-- **Loading states** — a `role=status` region with a spinner and disabled button while data is fetched.
-- **Error toasts** — an `role=alert` toast that announces server errors and disappears automatically.
-- **Accessibility** — skip link, semantic landmarks, focus-visible styles, `aria-live`, `aria-busy`, and reduced-motion support.
+## Features
 
-## Run the app
+- **Open/Close Drawer**: Click "Manage Skills" button to open drawer, "Close" button or overlay click to close.
+- **List Skills**: Fetches and displays all skills on drawer open.
+- **Add Skill**: Form to input name, description, and level (beginner/intermediate/advanced).
+- **Edit Skill**: Click "Edit" on a skill to pre-fill the form and update the skill.
+- **Delete Skill**: Click "Delete" to remove a skill after confirmation (immediate in current implementation).
+- **Error Handling**: Displays error messages for failed operations.
+- **Loading State**: Shows loading indicator while API calls are in progress.
 
-```bash
-python app.py
+## Usage
+
+```tsx
+import SkillsDrawer from './components/SkillsDrawer/SkillsDrawer';
+
+function App() {
+  return (
+    <div>
+      <SkillsDrawer />
+    </div>
+  );
+}
 ```
 
-Then open <http://127.0.0.1:8000>.
+## API Service
 
-## API
+The component relies on an API service (`src/services/skillsService.ts`) that exports `skillsService` with methods: `getSkills`, `createSkill`, `updateSkill`, `deleteSkill`. The current implementation uses a mock in-memory store. Replace with real HTTP calls.
 
-`GET /api/data` returns a JSON object with an `items` list.
+## Testing
 
-Query parameters:
-
-| Parameter | Default | Description                             |
-|-----------|---------|-----------------------------------------|
-| `delay`   | `0.6`   | Simulated server latency in seconds     |
-| `fail`    | `0`     | Set to `1` to force a 500 error         |
-
-Example:
+Run tests with:
 
 ```bash
-curl http://127.0.0.1:8000/api/data?delay=0&fail=1
+npm test -- --testPathPattern=SkillsDrawer
 ```
 
-## Run the tests
+Tests cover:
+- Opening drawer and fetching skills
+- Error handling on fetch failure
+- Creating a skill
+- Editing a skill
+- Deleting a skill
+- Cancelling edit mode
 
-```bash
-python -m unittest discover -s tests -v
+## Dependencies
+
+- React 16+ (hooks)
+- TypeScript (optional but recommended)
+- For testing: @testing-library/react, @testing-library/jest-dom
+
+## File Structure
+
 ```
-
-## Accessibility notes
-
-- The skip link lets keyboard users jump to the main content.
-- The loading region uses `role=status` and `aria-live=polite`.
-- The error toast uses `role=alert` and `aria-live=assertive`.
-- Focus indicators are visible and high contrast.
-- `prefers-reduced-motion` is respected.
-- The button is disabled during loading to avoid duplicate requests.
+src/
+  components/
+    SkillsDrawer/
+      SkillsDrawer.tsx
+      SkillsDrawer.css
+      SkillsDrawer.test.tsx
+  services/
+    skillsService.ts
+```
