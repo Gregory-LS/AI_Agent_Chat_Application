@@ -1,47 +1,45 @@
-# TaskBuddy
+# Attachments Handling Module
 
-A small, dependency-free web app that shows how to add polish to any web UI:
+This module provides functionality to process file attachments, specifically images and text files.
 
-- **Loading states** — a `role=status` region with a spinner and disabled button while data is fetched.
-- **Error toasts** — an `role=alert` toast that announces server errors and disappears automatically.
-- **Accessibility** — skip link, semantic landmarks, focus-visible styles, `aria-live`, `aria-busy`, and reduced-motion support.
+## Features
 
-## Run the app
+- Detect image files (PNG, JPEG, GIF, BMP) by reading magic bytes.
+- Extract image dimensions (width, height) without heavy libraries.
+- Read text files (UTF-8 encoded) and return their full content.
+- Return file size in bytes.
 
-```bash
-python app.py
+## Usage
+
+```python
+from attachments import process_attachment
+
+# Process a text file
+result = process_attachment("example.txt")
+print(result)
+# {'type': 'text', 'size': 123, 'content': '...'}
+
+# Process an image
+result = process_attachment("image.png")
+print(result)
+# {'type': 'image', 'size': 45678, 'dimensions': (1920, 1080)}
 ```
 
-Then open <http://127.0.0.1:8000>.
+## Error Handling
 
-## API
+- `FileNotFoundError` if the file does not exist.
+- `ValueError` if the file type is not supported (not an image and not valid UTF-8 text).
+- `ValueError` for malformed image headers.
 
-`GET /api/data` returns a JSON object with an `items` list.
+## Testing
 
-Query parameters:
-
-| Parameter | Default | Description                             |
-|-----------|---------|-----------------------------------------|
-| `delay`   | `0.6`   | Simulated server latency in seconds     |
-| `fail`    | `0`     | Set to `1` to force a 500 error         |
-
-Example:
+Run tests with pytest:
 
 ```bash
-curl http://127.0.0.1:8000/api/data?delay=0&fail=1
+pytest tests/test_attachments.py -v
 ```
 
-## Run the tests
+## Requirements
 
-```bash
-python -m unittest discover -s tests -v
-```
-
-## Accessibility notes
-
-- The skip link lets keyboard users jump to the main content.
-- The loading region uses `role=status` and `aria-live=polite`.
-- The error toast uses `role=alert` and `aria-live=assertive`.
-- Focus indicators are visible and high contrast.
-- `prefers-reduced-motion` is respected.
-- The button is disabled during loading to avoid duplicate requests.
+- Python 3.7+
+- No external dependencies (standard library only).
