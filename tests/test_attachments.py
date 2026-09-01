@@ -1,140 +1,111 @@
-import os
-import tempfile
 from pathlib import Path
 
 import pytest
-from PIL import Image
 
-from attachments import AttachmentHandler
-
-
-@pytest.fixture
-def handler(tmp_path):
-    """Create an AttachmentHandler with a temporary upload directory."""
-    upload_dir = tmp_path / "uploads"
-    return AttachmentHandler(upload_dir=upload_dir)
+from attachments import (
+    Attachment,
+    AttachmentNotFoundError,
+    AttachmentStore,
+    ValidationError,
+)
 
 
-@pytest.fixture
-def sample_image(tmp_path):
-    """Create a valid small PNG image."""
-    img_path = tmp_path / "test.png"
-    img = Image.new("RGB", (100, 100), color="red")
-    img.save(img_path)
-    return img_path
+@pytest.fixture()
+def store(tmp_path: Path) -> AttachmentStore:
+    return AttachmentStore(storage_dir=tmp_path / 'attachments')
 
 
-@pytest.fixture
-def sample_text(tmp_path):
-    """Create a valid UTF-8 text file."""
-    txt_path = tmp_path / "test.txt"
-    txt_path.write_text("Hello, world!\n", encoding="utf-8")
-    return txt_path
+def build_attachment(**overrides) -> Attachment:
+    values = {
+        'filename': 'notes.txt',
+        'content_type': 'text/plain',
+        'data': b'hello attachments',
+    }
+    values.update(overrides)
+    return Attachment(**values)
 
 
-class TestHandleImage:
-    def test_valid_image(self, handler, sample_image):
-        dest = handler.handle_image(sample_image)
-        assert dest.exists()
-        assert dest.name == "test.png"
+def test_save_and_load_round_trip(store):
+    original = build_attachment(metadata={'user_id': 42, 'labels': ['docs']})
 
-    def test_unsupported_extension(self, handler, tmp_path):
-        fake = tmp_path / "image.pdf"
-        fake.write_text("fake")
-        with pytest.raises(ValueError, match="Unsupported image extension"):
-            handler.handle_image(fake)
+    saved = store.save(original)
 
-    def test_file_not_found(self, handler):
-        with pytest.raises(FileNotFoundError):
-            handler.handle_image("nonexistent.png")
-
-    def test_oversized_image(self, handler, tmp_path):
-        # Create a large file by writing garbage
-        large = tmp_path / "large.jpg"
-        size = (handler.max_image_size_mb + 1) * 1024 * 1024
-        large.write_bytes(b"0" * size)
-        with pytest.raises(ValueError, match="exceeds maximum"):
-            handler.handle_image(large)
-
-    def test_invalid_image_content(self, handler, tmp_path):
-        fake = tmp_path / "fake.png"
-        fake.write_bytes(b"not a real image")
-        with pytest.raises(ValueError, match="not a valid image"):
-            handler.handle_image(fake)
+    loaded = store.load(saved.attachment_id)
+    assert loaded.attachment_id == saved.attachment_id
+    assert loaded.filename == original.filename
+    assert loaded.content_type == original.content_type
+    assert loaded.data == original.data
+    assert loaded.metadata == original.metadata
 
 
-class TestHandleText:
-    def test_valid_text(self, handler, sample_text):
-        dest = handler.handle_text(sample_text)
-        assert dest.exists()
-        assert dest.name == "test.txt"
+def test_save_generates_valid_id(store):
+    saved = store.save(build_attachment())
 
-    def test_unsupported_extension(self, handler, tmp_path):
-        fake = tmp_path / "data.bin"
-        fake.write_text("binary")
-        with pytest.raises(ValueError, match="Unsupported text extension"):
-            handler.handle_text(fake)
-
-    def test_file_not_found(self, handler):
-        with pytest.raises(FileNotFoundError):
-            handler.handle_text("nope.txt")
-
-    def test_oversized_text(self, handler, tmp_path):
-        large = tmp_path / "large.txt"
-        size = (handler.max_text_size_mb + 1) * 1024 * 1024
-        large.write_bytes(b"a" * size)
-        with pytest.raises(ValueError, match="exceeds maximum"):
-            handler.handle_text(large)
-
-    def test_non_utf8_text(self, handler, tmp_path):
-        bad = tmp_path / "bad.txt"
-        bad.write_bytes(b"\xff\xfe")
-        with pytest.raises(ValueError, match="not valid UTF-8"):
-            handler.handle_text(bad)
+    assert len(saved.attachment_id) > 0
+    assert all(c.isalnum() or c in '-_' for c in saved.attachment_id)
 
 
-class TestSaveAttachment:
-    def test_image_detected(self, handler, sample_image):
-        dest = handler.save_attachment(sample_image)
-        assert dest.suffix == ".png"
+def test_save_preserves_provided_id(store):
+    saved = store.save(build_attachment(attachment_id='my-file'))
 
-    def test_text_detected(self, handler, sample_text):
-        dest = handler.save_attachment(sample_text)
-        assert dest.suffix == ".txt"
-
-    def test_unsupported_type(self, handler, tmp_path):
-        unknown = tmp_path / "file.xyz"
-        unknown.write_text("unknown")
-        with pytest.raises(ValueError, match="Unsupported file extension"):
-            handler.save_attachment(unknown)
+    assert saved.attachment_id == 'my-file'
+    assert store.load('my-file').filename == 'notes.txt'
 
 
-class TestEdgeCases:
-    def test_empty_text_file(self, handler, tmp_path):
-        empty = tmp_path / "empty.txt"
-        empty.write_text("", encoding="utf-8")
-        dest = handler.handle_text(empty)
-        assert dest.exists()
+def test_rejects_too_large(tmp_path):
+    store = AttachmentStore(tmp_path / 'medium', max_size=4)
 
-    def test_empty_image_file(self, handler, tmp_path):
-        # PIL cannot save an empty image, so we create a minimal valid PNG
-        # Actually we can create a 1x1 pixel
-        img = Image.new("RGB", (1, 1))
-        empty_img = tmp_path / "tiny.png"
-        img.save(empty_img)
-        dest = handler.handle_image(empty_img)
-        assert dest.exists()
+    with pytest.raises(ValidationError, match='maximum allowed'):
+        store.save(build_attachment(data=b'12345'))
 
-    def test_filename_with_spaces(self, handler, tmp_path):
-        img = Image.new("RGB", (10, 10))
-        path = tmp_path / "my image.png"
-        img.save(path)
-        dest = handler.handle_image(path)
-        assert dest.name == "my image.png"
 
-    def test_case_insensitive_extension(self, handler, tmp_path):
-        img = Image.new("RGB", (10, 10))
-        path = tmp_path / "image.PNG"
-        img.save(path)
-        dest = handler.handle_image(path)
-        assert dest.exists()
+def test_rejects_disallowed_content_type(store):
+    with pytest.raises(ValidationError, match='content type'):
+        store.save(build_attachment(content_type='application/x-unknown'))
+
+
+@pytest.mark.parametrize(
+    'filename',
+    ['', '.', '..', '../evil.sh', 'dir/evil.sh', 'evil.sh' + chr(92)],
+)
+def test_rejects_unsafe_filename(store, filename):
+    with pytest.raises(ValidationError, match='filename'):
+        store.save(build_attachment(filename=filename))
+
+
+def test_load_rejects_invalid_id(store):
+    with pytest.raises(ValueError):
+        store.load('../bad')
+
+
+def test_load_missing_attachment(store):
+    with pytest.raises(AttachmentNotFoundError):
+        store.load('doesnotexist')
+
+
+def test_delete_removes_attachment(store):
+    saved = store.save(build_attachment())
+
+    assert store.exists(saved.attachment_id) is True
+    assert store.delete(saved.attachment_id) is True
+    assert store.exists(saved.attachment_id) is False
+    assert store.delete(saved.attachment_id) is False
+
+
+def test_list_attachments(store):
+    first = store.save(build_attachment(filename='a.txt', data=b'a'))
+    second = store.save(build_attachment(filename='b.txt', data=b'bb'))
+
+    assert set(store.list_ids()) == {first.attachment_id, second.attachment_id}
+    assert len(store.list_attachments()) == 2
+
+
+def test_attachment_from_file(tmp_path):
+    path = tmp_path / 'sample.bin'
+    path.write_bytes(bytes([0, 1]))
+
+    attachment = Attachment.from_file(path, content_type='application/octet-stream')
+
+    assert attachment.filename == 'sample.bin'
+    assert attachment.data == bytes([0, 1])
+    assert attachment.size == 2
