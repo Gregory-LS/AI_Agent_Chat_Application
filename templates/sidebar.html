@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Conversation Sidebar</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='sidebar.css') }}">
+</head>
+<body>
+    <div class="sidebar">
+        <div class="sidebar-header">
+            <h2>Conversations</h2>
+        </div>
+        <div class="search-bar">
+            <input type="text" id="search-input" placeholder="Search conversations...">
+        </div>
+        <ul id="conversation-list" class="conversation-list">
+            <!-- Conversations will be loaded here -->
+        </ul>
+        <button id="new-conversation-btn" class="new-conversation-btn">+ New Conversation</button>
+    </div>
+    <script src="{{ url_for('static', filename='sidebar.js') }}"></script>
+</body>
+</html>

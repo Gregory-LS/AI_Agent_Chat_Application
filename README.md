@@ -1,28 +1,51 @@
-# Chat Application
+# Conversation Sidebar Feature
 
-This is a simple chat application core that provides:
-- **Message**: A data class representing a single message.
-- **ChatHistory**: Manages conversation history (add, get, clear, last message).
-- **ChatService**: High-level service to send messages and retrieve history.
+This module implements a reusable conversation sidebar for a chat application.
 
-## Usage
+## Features
+- List all conversations
+- Search conversations by title or last message
+- Create new conversations
+- Click to select a conversation (dispatches custom event)
+- Responsive design
 
-```python
-from chat_core import ChatService
+## Tech Stack
+- Backend: Flask (Python)
+- Frontend: HTML, CSS, JavaScript (vanilla)
+- Testing: pytest
 
-service = ChatService()
-service.send_message("Hello, world!")
-history = service.get_conversation_history()
-print(history)
-```
+## Setup
 
-## Tests
+1. Install dependencies:
+   ```bash
+   pip install flask flask-cors pytest
+   ```
 
-Run tests with:
+2. Run the application:
+   ```bash
+   python app.py
+   ```
+
+3. Open `http://localhost:5000` in your browser.
+
+## API Endpoints
+
+### GET /api/conversations
+Returns list of conversations. Optional query parameter `search` filters by title or last message.
+
+### POST /api/conversations
+Creates a new conversation. Requires JSON body with `title` field.
+
+## Running Tests
+
 ```bash
-pytest tests/test_chat_core.py -v
+pytest tests/
 ```
 
-## Files
-- `chat_core.py` - Core implementation
-- `tests/test_chat_core.py` - Unit tests
+## File Structure
+- `app.py` - Flask application with API endpoints
+- `static/sidebar.css` - Styles for the sidebar
+- `static/sidebar.js` - Client-side logic
+- `templates/sidebar.html` - HTML template for the sidebar
+- `tests/test_sidebar.py` - Unit tests for the API
+- `README.md` - This file
