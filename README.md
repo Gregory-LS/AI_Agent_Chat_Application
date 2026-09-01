@@ -1,47 +1,46 @@
-# Conversation Sidebar
+# Chat Core System
 
-Persistent conversation history management for multi-turn AI interactions.
+A minimal chat core library providing message management and conversation history.
+
+## Features
+
+- Send messages with roles (user, assistant, etc.)
+- Retrieve full or limited chat history
+- Configurable maximum history size
+- Clear conversation history
+
+## Installation
+
+Clone the repository and install dependencies (if any):
+
+```bash
+pip install -r requirements.txt  # if required
+```
 
 ## Usage
 
 ```python
-from conversation_manager import ConversationManager
+from chat_core import ChatManager
 
-manager = ConversationManager("conversations.json")
+manager = ChatManager(max_history=100)
 
-manager.add_message("session-1", "user", "What is AI?")
-manager.add_message("session-1", "assistant", "Artificial Intelligence...")
+# Send messages
+manager.send_message("user", "Hello!")
+manager.send_message("assistant", "How can I help you?")
 
-history = manager.get_conversation("session-1")
-print(history)
+# Get full history
+history = manager.get_history()
+# [{'role': 'user', 'content': 'Hello!', 'timestamp': ...}, ...]
 
-# List all conversations
-print(manager.list_conversations())
+# Get recent context
+context = manager.get_context(limit=5)
 
-# Delete a conversation
-manager.delete_conversation("session-1")
+# Clear history
+manager.clear_history()
 ```
 
-## API
-
-### `add_message(conversation_id, role, content)`
-Adds a message to a conversation. Creates a new conversation if the ID doesn't exist.
-
-### `get_conversation(conversation_id)`
-Returns a list of message dicts (`{"role": ..., "content": ...}`). Returns empty list if not found.
-
-### `list_conversations()`
-Returns a list of all conversation IDs.
-
-### `delete_conversation(conversation_id)`
-Deletes a conversation. Returns `True` if deleted, `False` if not found.
-
-## Persistence
-
-All conversations are stored in a JSON file specified at initialization (default: `conversations.json`).
-
-## Testing
+## Running Tests
 
 ```bash
-pytest tests/test_conversation_manager.py -v
+pytest tests/
 ```
