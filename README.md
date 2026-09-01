@@ -1,52 +1,28 @@
-# Conversation Sidebar
+# Chat Application
 
-A React component for displaying a list of conversations.
-
-## Features
-
-- View list of conversations
-- Search/filter conversations by name
-- Click to select a conversation
-- Create new conversation
-- Shows last message preview and timestamp
+This is a simple chat application core that provides:
+- **Message**: A data class representing a single message.
+- **ChatHistory**: Manages conversation history (add, get, clear, last message).
+- **ChatService**: High-level service to send messages and retrieve history.
 
 ## Usage
 
-```jsx
-import Sidebar from './components/Sidebar';
+```python
+from chat_core import ChatService
 
-<Sidebar
-  conversations={conversations}
-  onSelect={(id) => console.log('Selected:', id)}
-  onCreateNew={() => console.log('New conversation')}
-/>
+service = ChatService()
+service.send_message("Hello, world!")
+history = service.get_conversation_history()
+print(history)
 ```
 
-## Props
+## Tests
 
-| Prop | Type | Description |
-|------|------|-------------|
-| conversations | Array | Array of conversation objects: { id, name, lastMessage?, updatedAt? } |
-| onSelect | Function | Called when a conversation is clicked, receives the conversation id |
-| onCreateNew | Function | Called when the "+ New" button is clicked |
-| currentUserId | (optional) | The current user's id (for future use) |
-
-## Development
-
-Install dependencies:
-
+Run tests with:
 ```bash
-npm install
-```
-
-Run tests:
-
-```bash
-npm test
+pytest tests/test_chat_core.py -v
 ```
 
 ## Files
-
-- `src/components/Sidebar.jsx` - React component
-- `src/components/Sidebar.css` - Styles
-- `tests/test_Sidebar.jsx` - Unit tests
+- `chat_core.py` - Core implementation
+- `tests/test_chat_core.py` - Unit tests

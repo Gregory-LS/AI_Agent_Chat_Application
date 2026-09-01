@@ -1,71 +1,79 @@
-import datetime
-from typing import List, Dict, Optional
+import uuid
+from datetime import datetime
+from typing import List, Optional
 
-class ChatMessage:
+
+class Message:
     """Represents a single chat message."""
-    def __init__(self, role: str, content: str, timestamp: Optional[datetime.datetime] = None):
+    def __init__(self, role: str, content: str, timestamp: Optional[datetime] = None):
+        self.id = str(uuid.uuid4())
         self.role = role
         self.content = content
-        self.timestamp = timestamp or datetime.datetime.utcnow()
+        self.timestamp = timestamp or datetime.utcnow()
 
-    def to_dict(self) -> Dict:
+    def __repr__(self):
+        return f"<Message {self.role}: {self.content[:30]}>"
+
+    def to_dict(self) -> dict:
         return {
+            "id": self.id,
             "role": self.role,
             "content": self.content,
             "timestamp": self.timestamp.isoformat()
         }
 
-class ChatManager:
-    """Manages chat conversations, storing messages and providing context."""
-    def __init__(self, max_history: int = 100):
-        self.messages: List[ChatMessage] = []
-        self.max_history = max_history
 
-    def send_message(self, role: str, content: str) -> ChatMessage:
-        """Add a new message to the chat history.
+class ChatHistory:
+    """Manages the list of messages in a chat session."""
+    def __init__(self):
+        self.messages: List[Message] = []
 
-        Args:
-            role: The role of the sender (e.g., 'user', 'assistant').
-            content: The text content of the message.
-
-        Returns:
-            The created ChatMessage instance.
-
-        Raises:
-            ValueError: If role or content is empty.
-        """
-        if not role or not role.strip():
-            raise ValueError("Role must be a non-empty string.")
-        if not content or not content.strip():
-            raise ValueError("Content must be a non-empty string.")
-        message = ChatMessage(role=role, content=content)
+    def add_message(self, role: str, content: str) -> Message:
+        """Add a message to the history."""
+        if not role:
+            raise ValueError("Role must not be empty")
+        if not content:
+            raise ValueError("Content must not be empty")
+        message = Message(role, content)
         self.messages.append(message)
-        # Enforce max history by removing oldest messages if necessary
-        if len(self.messages) > self.max_history:
-            self.messages = self.messages[-self.max_history:]
         return message
 
-    def get_history(self) -> List[Dict]:
-        """Retrieve the entire chat history as a list of dictionaries.
+    def get_messages(self, since: Optional[datetime] = None) -> List[Message]:
+        """Get messages, optionally filtered by timestamp."""
+        if since is None:
+            return self.messages[:]
+        return [m for m in self.messages if m.timestamp >= since]
 
-        Returns:
-            A list of message dictionaries with keys 'role', 'content', and 'timestamp'.
-        """
-        return [msg.to_dict() for msg in self.messages]
-
-    def get_context(self, limit: Optional[int] = None) -> List[Dict]:
-        """Retrieve the most recent messages for context.
-
-        Args:
-            limit: Maximum number of recent messages to return. If None, returns all.
-
-        Returns:
-            A list of message dictionaries.
-        """
-        if limit is None:
-            return self.get_history()
-        return [msg.to_dict() for msg in self.messages[-limit:]]
-
-    def clear_history(self) -> None:
-        """Clear all messages from the chat history."""
+    def clear(self) -> None:
+        """Clear all messages."""
         self.messages.clear()
+
+    def last_message(self) -> Optional[Message]:
+        """Get the last message, or None if empty."""
+        if not self.messages:
+            return None
+        return self.messages[-1]
+
+
+class ChatService:
+    """Core chat service that manages a conversation."""
+    def __init__(self, history: Optional[ChatHistory] = None):
+        self.history = history or ChatHistory()
+
+    def send_message(self, content: str) -> Message:
+        """Send a user message and get an automatic 'echo' response."""
+        if not content:
+            raise ValueError("Message content cannot be empty")
+        user_msg = self.history.add_message("user", content)
+        # For now, respond with a simple echo message
+        response_content = f"Echo: {content}"
+        bot_msg = self.history.add_message("assistant", response_content)
+        return user_msg
+
+    def get_conversation_history(self) -> List[dict]:
+        """Return the conversation history as a list of dicts."""
+        return [msg.to_dict() for msg in self.history.get_messages()]
+
+    def reset_conversation(self) -> None:
+        """Reset the conversation by clearing history."""
+        self.history.clear()
