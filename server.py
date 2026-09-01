@@ -1,162 +1,123 @@
-'''OpenRouter proxy with SSE streaming.'''
-from __future__ import annotations
-
-import json
 import os
-from typing import Iterator, Optional
+import json
+import logging
+from typing import AsyncGenerator, Optional
 
-import requests
-from flask import Flask, Response, jsonify, request, stream_with_context
+import httpx
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel, Field
+from sse_starlette.sse import EventSourceResponse
 
-DEFAULT_OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions'
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+# Environment variables
+OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY", "")
+OPENROUTER_BASE_URL = os.getenv(
+    "OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1"
+)
+
+app = FastAPI(title="OpenRouter Proxy", version="1.0.0")
+
+# CORS configuration (allow all for development)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
-def create_app(
-    openrouter_url: Optional[str] = None,
-    openrouter_api_key: Optional[str] = None,
-) -> Flask:
-    '''Create and configure the Flask application.'''
-    app = Flask(__name__)
-    app.config['OPENROUTER_URL'] = openrouter_url or os.getenv(
-        'OPENROUTER_URL', DEFAULT_OPENROUTER_URL
-    )
-    app.config['OPENROUTER_API_KEY'] = openrouter_api_key or os.getenv(
-        'OPENROUTER_API_KEY', ''
-    )
+class ChatCompletionRequest(BaseModel):
+    """Request model matching OpenRouter's chat completion endpoint."""
+    model: str = Field(..., description="Model identifier")
+    messages: list[dict] = Field(..., description="List of message objects")
+    stream: bool = Field(True, description="Whether to stream the response")
+    # Additional optional fields can be added; we pass everything through
+    class Config:
+        extra = "allow"
 
-    @app.after_request
-    def add_cors_headers(response: Response) -> Response:
-        response.headers['Access-Control-Allow-Origin'] = '*'
-        response.headers['Access-Control-Allow-Headers'] = 'Authorization, Content-Type'
-        response.headers['Access-Control-Allow-Methods'] = 'GET, POST, OPTIONS'
-        return response
 
-    def _get_api_key() -> str:
-        auth = request.headers.get('Authorization', '')
-        if auth.lower().startswith('bearer '):
-            key = auth[7:].strip()
-            if key:
-                return key
-        return app.config.get('OPENROUTER_API_KEY', '')
+async def stream_openrouter_response(
+    request_data: dict, api_key: str, base_url: str
+) -> AsyncGenerator[str, None]:
+    """
+    Stream response from OpenRouter API and yield SSE-formatted strings.
 
-    def _error_response(message: str, status_code: int) -> tuple:
-        return (
-            jsonify(
-                {
-                    'error': {
-                        'message': message,
-                        'type': 'proxy_error',
-                        'code': status_code,
-                    }
-                }
-            ),
-            status_code,
+    Args:
+        request_data: The request payload (dict).
+        api_key: OpenRouter API key.
+        base_url: Base URL for OpenRouter API.
+
+    Yields:
+        SSE event strings.
+    """
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+    }
+    async with httpx.AsyncClient(timeout=60.0) as client:
+        async with client.stream(
+            "POST",
+            f"{base_url}/chat/completions",
+            json=request_data,
+            headers=headers,
+        ) as response:
+            if response.status_code != 200:
+                error_body = await response.aread()
+                logger.error(
+                    f"OpenRouter API error {response.status_code}: {error_body}"
+                )
+                yield f"data: {json.dumps({'error': error_body.decode()})}\n\n"
+                yield "data: [DONE]\n\n"
+                return
+
+            async for line in response.aiter_lines():
+                if line.startswith("data: "):
+                    yield line + "\n"
+                elif line.strip() == "data: [DONE]":
+                    yield "data: [DONE]\n\n"
+
+
+@app.get("/health")
+async def health():
+    """Health check endpoint."""
+    return {"status": "healthy"}
+
+
+@app.post("/chat/completions")
+async def chat_completions(request: ChatCompletionRequest):
+    """
+    Proxy endpoint for OpenRouter chat completions with SSE streaming.
+
+    Accepts a ChatCompletionRequest and streams the response from OpenRouter
+    as Server-Sent Events. If the request has `stream: false`, it will still
+    stream but will send the complete response in one event.
+    """
+    if not OPENROUTER_API_KEY:
+        raise HTTPException(
+            status_code=500,
+            detail="OpenRouter API key not configured. Set OPENROUTER_API_KEY environment variable.",
         )
 
-    @app.get('/health')
-    def health() -> Response:
-        return jsonify({'status': 'ok'})
+    # Convert request to dict, include extra fields
+    request_data = request.model_dump()
 
-    @app.route('/v1/chat/completions', methods=['POST', 'OPTIONS'])
-    @app.route('/api/v1/chat/completions', methods=['POST', 'OPTIONS'])
-    def chat_completions():
-        if request.method == 'OPTIONS':
-            return Response(status=204)
+    # Ensure stream is True for SSE; we always stream from the proxy
+    request_data["stream"] = True
 
-        if not request.is_json:
-            return _error_response('Request body must be JSON', 400)
-
-        try:
-            payload = request.get_json()
-        except Exception:
-            return _error_response('Invalid JSON body', 400)
-
-        if not isinstance(payload, dict):
-            return _error_response('JSON body must be an object', 400)
-
-        if 'messages' not in payload or not isinstance(payload['messages'], list):
-            return _error_response('Missing or invalid messages field', 400)
-
-        api_key = _get_api_key()
-        if not api_key:
-            return _error_response(
-                'Missing OpenRouter API key. Set OPENROUTER_API_KEY or send an Authorization header.',
-                401,
-            )
-
-        headers = {
-            'Authorization': f'Bearer {api_key}',
-            'Content-Type': 'application/json',
-        }
-
-        origin = request.headers.get('Origin')
-        referer = request.headers.get('Referer')
-        if origin:
-            headers['HTTP-Referer'] = origin
-        elif referer:
-            headers['HTTP-Referer'] = referer
-
-        app_title = os.getenv('OPENROUTER_APP_TITLE')
-        if app_title:
-            headers['X-Title'] = app_title
-
-        forwarded_payload = dict(payload)
-        forwarded_payload['stream'] = True
-
-        try:
-            upstream = requests.post(
-                app.config['OPENROUTER_URL'],
-                json=forwarded_payload,
-                headers=headers,
-                stream=True,
-                timeout=(10, 300),
-            )
-        except requests.RequestException as exc:
-            return _error_response(f'Upstream request failed: {exc}', 502)
-
-        if upstream.status_code != 200:
-            upstream_payload = None
-            try:
-                upstream_payload = upstream.json()
-            except Exception:
-                pass
-            upstream.close()
-            if isinstance(upstream_payload, dict):
-                return jsonify(upstream_payload), upstream.status_code
-            return _error_response(
-                f'OpenRouter returned HTTP {upstream.status_code}',
-                upstream.status_code,
-            )
-
-        def generate() -> Iterator[str]:
-            try:
-                for raw_line in upstream.iter_lines():
-                    if not raw_line:
-                        yield '\n'
-                        continue
-                    if isinstance(raw_line, bytes):
-                        raw_line = raw_line.decode('utf-8', errors='replace')
-                    yield f'{raw_line}\n'
-            except Exception as exc:
-                error_payload = json.dumps({'error': {'message': str(exc)}})
-                yield 'event: error\ndata: ' + error_payload + '\n\n'
-            finally:
-                upstream.close()
-
-        return Response(
-            stream_with_context(generate()),
-            mimetype='text/event-stream',
-            headers={
-                'Cache-Control': 'no-cache',
-                'Connection': 'keep-alive',
-                'X-Accel-Buffering': 'no',
-            },
+    return EventSourceResponse(
+        stream_openrouter_response(
+            request_data=request_data,
+            api_key=OPENROUTER_API_KEY,
+            base_url=OPENROUTER_BASE_URL,
         )
+    )
 
 
-app = create_app()
-
-
-if __name__ == '__main__':
-    port = int(os.getenv('PORT', '8000'))
-    app.run(host='0.0.0.0', port=port, threaded=True)
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8000)

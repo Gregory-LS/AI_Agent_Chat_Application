@@ -1,230 +1,118 @@
-import json
 import os
-import sys
-
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-
+import json
 import pytest
+from unittest.mock import AsyncMock, patch
 
-import server
-
-
-class FakeResponse:
-    def __init__(self, status_code=200, lines=None, json_data=None):
-        self.status_code = status_code
-        self.lines = lines if lines is not None else []
-        self.json_data = json_data
-        self.closed = False
-
-    def iter_lines(self, **kwargs):
-        for line in self.lines:
-            if isinstance(line, str):
-                yield line.encode()
-            else:
-                yield line
-
-    def json(self):
-        if self.json_data is None:
-            return {'error': {'message': 'upstream error'}}
-        return self.json_data
-
-    def close(self):
-        self.closed = True
+from httpx import AsyncClient, ASGITransport
+from server import app
 
 
 @pytest.fixture
- def client():
-    app = server.create_app(
-        openrouter_url='https://openrouter.test/v1/chat/completions',
-        openrouter_api_key='test-key',
-    )
-    return app.test_client()
+def client():
+    transport = ASGITransport(app=app)
+    return AsyncClient(transport=transport, base_url="http://test")
 
 
-def test_proxies_and_streams_sse(client, monkeypatch):
-    delta = json.dumps({'choices': [{'delta': {'content': 'Hello'}}]})
-    lines = [
-        'data: ' + delta,
-        '',
-        'data: [DONE]',
-        '',
-    ]
-    captured = {}
+@pytest.fixture(autouse=True)
+def set_env():
+    os.environ["OPENROUTER_API_KEY"] = "test-key"
+    yield
+    if "OPENROUTER_API_KEY" in os.environ:
+        del os.environ["OPENROUTER_API_KEY"]
 
-    def fake_post(url, json=None, headers=None, stream=False, timeout=None):
-        captured['url'] = url
-        captured['json'] = json
-        captured['headers'] = headers
-        captured['stream'] = stream
-        return FakeResponse(lines=lines)
 
-    monkeypatch.setattr(server.requests, 'post', fake_post)
-
-    response = client.post(
-        '/v1/chat/completions',
-        json={
-            'model': 'openai/gpt-4o',
-            'messages': [{'role': 'user', 'content': 'Hi'}],
-        },
-        headers={'Authorization': 'Bearer client-test-key'},
-    )
-
+@pytest.mark.asyncio
+async def test_health(client):
+    response = await client.get("/health")
     assert response.status_code == 200
-    assert response.mimetype == 'text/event-stream'
-
-    body = response.get_data(as_text=True)
-    assert 'data: ' in body
-    assert 'Hello' in body
-    assert 'data: [DONE]' in body
-    assert captured['headers']['Authorization'] == 'Bearer client-test-key'
-    assert captured['json']['stream'] is True
-    assert captured['stream'] is True
-    assert captured['url'].startswith('https://openrouter.test')
+    assert response.json() == {"status": "healthy"}
 
 
-def test_missing_api_key_returns_401(client, monkeypatch):
-    def fail_post(*args, **kwargs):
-        raise AssertionError('requests.post should not be called')
+@pytest.mark.asyncio
+async def test_chat_completions_no_api_key():
+    # Temporarily remove API key
+    if "OPENROUTER_API_KEY" in os.environ:
+        del os.environ["OPENROUTER_API_KEY"]
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post(
+            "/chat/completions",
+            json={"model": "test-model", "messages": [{"role": "user", "content": "hi"}]},
+        )
+    assert response.status_code == 500
+    assert "API key not configured" in response.json()["detail"]
 
-    monkeypatch.setattr(server.requests, 'post', fail_post)
-    client.application.config['OPENROUTER_API_KEY'] = ''
 
-    response = client.post(
-        '/v1/chat/completions',
-        json={
-            'model': 'openai/gpt-4o',
-            'messages': [{'role': 'user', 'content': 'Hi'}],
-        },
+@pytest.mark.asyncio
+@patch("server.httpx.AsyncClient.stream")
+async def test_chat_completions_success(mock_stream, client):
+    # Mock the streaming response
+    mock_response = AsyncMock()
+    mock_response.status_code = 200
+    mock_response.aiter_lines = AsyncMock(return_value=[
+        "data: {"choices":[{"delta":{"content":"Hello"}}]}",
+        "data: {"choices":[{"delta":{"content":" world"}}]}",
+        "data: [DONE]",
+    ])
+    mock_stream.return_value.__aenter__.return_value = mock_response
+
+    response = await client.post(
+        "/chat/completions",
+        json={"model": "test-model", "messages": [{"role": "user", "content": "hi"}]},
     )
-
-    assert response.status_code == 401
-    assert 'API key' in response.get_json()['error']['message']
-
-
-def test_invalid_json_returns_400(client, monkeypatch):
-    def fail_post(*args, **kwargs):
-        raise AssertionError('requests.post should not be called')
-
-    monkeypatch.setattr(server.requests, 'post', fail_post)
-
-    response = client.post(
-        '/v1/chat/completions',
-        data='{bad',
-        content_type='application/json',
-    )
-
-    assert response.status_code == 400
-    assert response.get_json()['error']['message'] == 'Invalid JSON body'
-
-
-def test_forwards_upstream_error(client, monkeypatch):
-    fake = FakeResponse(
-        status_code=400,
-        json_data={'error': {'message': 'Insufficient credits'}},
-    )
-    monkeypatch.setattr(server.requests, 'post', lambda *args, **kwargs: fake)
-
-    response = client.post(
-        '/v1/chat/completions',
-        json={
-            'model': 'openai/gpt-4o',
-            'messages': [{'role': 'user', 'content': 'Hi'}],
-        },
-        headers={'Authorization': 'Bearer key'},
-    )
-
-    assert response.status_code == 400
-    assert response.get_json()['error']['message'] == 'Insufficient credits'
-
-
-def test_upstream_connection_error_returns_502(client, monkeypatch):
-    def raise_error(*args, **kwargs):
-        raise server.requests.RequestException('network down')
-
-    monkeypatch.setattr(server.requests, 'post', raise_error)
-
-    response = client.post(
-        '/v1/chat/completions',
-        json={
-            'model': 'openai/gpt-4o',
-            'messages': [{'role': 'user', 'content': 'Hi'}],
-        },
-        headers={'Authorization': 'Bearer key'},
-    )
-
-    assert response.status_code == 502
-    assert 'network down' in response.get_json()['error']['message']
-
-
-def test_stream_error_emits_sse_error_event(client, monkeypatch):
-    class BrokenResponse(FakeResponse):
-        def iter_lines(self, **kwargs):
-            yield b'data: ok'
-            raise IOError('pipe broken')
-
-    monkeypatch.setattr(server.requests, 'post', lambda *args, **kwargs: BrokenResponse())
-
-    response = client.post(
-        '/v1/chat/completions',
-        json={
-            'model': 'openai/gpt-4o',
-            'messages': [{'role': 'user', 'content': 'Hi'}],
-        },
-        headers={'Authorization': 'Bearer key'},
-    )
-
     assert response.status_code == 200
-    body = response.get_data(as_text=True)
-    assert 'event: error' in body
-    assert 'pipe broken' in body
+    assert response.headers["content-type"] == "text/event-stream; charset=utf-8"
+    # Read stream
+    lines = response.text.strip().split("\n")
+    assert len(lines) == 3
+    assert lines[0] == "data: {"choices":[{"delta":{"content":"Hello"}}]}"
+    assert lines[1] == "data: {"choices":[{"delta":{"content":" world"}}]}"
+    assert lines[2] == "data: [DONE]"
 
 
-def test_cors_preflight(client):
-    response = client.options('/v1/chat/completions')
-    assert response.status_code == 204
-    assert response.headers['Access-Control-Allow-Origin'] == '*'
+@pytest.mark.asyncio
+@patch("server.httpx.AsyncClient.stream")
+async def test_chat_completions_api_error(mock_stream, client):
+    # Mock an API error response
+    mock_response = AsyncMock()
+    mock_response.status_code = 401
+    mock_response.aread = AsyncMock(return_value=b"Unauthorized")
+    mock_stream.return_value.__aenter__.return_value = mock_response
 
-
-def test_api_alias_route(client, monkeypatch):
-    fake = FakeResponse(lines=['data: [DONE]', ''])
-    monkeypatch.setattr(server.requests, 'post', lambda *args, **kwargs: fake)
-
-    response = client.post(
-        '/api/v1/chat/completions',
-        json={
-            'model': 'openai/gpt-4o',
-            'messages': [{'role': 'user', 'content': 'Hi'}],
-        },
-        headers={'Authorization': 'Bearer key'},
+    response = await client.post(
+        "/chat/completions",
+        json={"model": "test-model", "messages": [{"role": "user", "content": "hi"}]},
     )
+    assert response.status_code == 200  # We still return 200 with error in stream
+    assert "data: {"error":"Unauthorized"}" in response.text
+    assert "data: [DONE]" in response.text
 
-    assert response.status_code == 200
-    assert 'data: [DONE]' in response.get_data(as_text=True)
 
+@pytest.mark.asyncio
+@patch("server.httpx.AsyncClient.stream")
+async def test_chat_completions_extra_fields(mock_stream, client):
+    # Test that extra fields are passed through
+    mock_response = AsyncMock()
+    mock_response.status_code = 200
+    mock_response.aiter_lines = AsyncMock(return_value=[
+        "data: {"choices":[{"delta":{"content":"ok"}}]}",
+        "data: [DONE]",
+    ])
+    mock_stream.return_value.__aenter__.return_value = mock_response
 
-def test_origin_forwarded_as_http_referer(client, monkeypatch):
-    captured = {}
-
-    def fake_post(url, json=None, headers=None, stream=False, timeout=None):
-        captured['headers'] = headers
-        return FakeResponse(lines=['data: [DONE]', ''])
-
-    monkeypatch.setattr(server.requests, 'post', fake_post)
-
-    response = client.post(
-        '/v1/chat/completions',
+    response = await client.post(
+        "/chat/completions",
         json={
-            'model': 'openai/gpt-4o',
-            'messages': [{'role': 'user', 'content': 'Hi'}],
+            "model": "test-model",
+            "messages": [{"role": "user", "content": "hi"}],
+            "temperature": 0.7,
+            "max_tokens": 100,
         },
-        headers={'Authorization': 'Bearer key', 'Origin': 'https://app.example'},
     )
-
     assert response.status_code == 200
-    assert captured['headers']['HTTP-Referer'] == 'https://app.example'
-
-
-def test_health(client):
-    response = client.get('/health')
-    assert response.status_code == 200
-    assert response.get_json() == {'status': 'ok'}
+    # Verify that the request sent to OpenRouter included extra fields
+    call_args = mock_stream.call_args
+    sent_json = call_args[1]["json"]
+    assert sent_json["temperature"] == 0.7
+    assert sent_json["max_tokens"] == 100
+    assert sent_json["stream"] == True  # Overridden to True
