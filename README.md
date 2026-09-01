@@ -1,47 +1,26 @@
-# Karbonite
+# Onboarding Wizard - Skills Drawer / Panel
 
-A Python toolkit for data processing utilities.
+## Overview
+This component provides a sliding drawer/panel for selecting starter skills during the onboarding wizard. It includes six pre-defined starter skills: Python, JavaScript, SQL, Git, Docker, Kubernetes. Each skill is displayed as a card with an icon and name. Users can toggle skills on/off and confirm their selection.
 
-## Installation
-
-```bash
-pip install karbonite
-```
+## Files
+- **src/components/SkillsDrawer.vue** - The drawer component. Accepts `isOpen` prop, emits `close` and `update:selection`.
+- **src/components/SkillsDrawer.css** - Styles for the drawer overlay, animation, skill cards, and buttons.
+- **src/stores/skills.js** - Vue reactive store managing selected and confirmed skills.
+- **tests/test_skills_store.js** - Unit tests for the skills store.
+- **tests/test_SkillsDrawer.vue.js** - Unit tests for the SkillsDrawer component.
 
 ## Usage
+1. Import `SkillsDrawer` in your parent component.
+2. Control visibility via `isOpen` prop.
+3. Listen for `close` (when user cancels or closes) and `update:selection` (when user confirms).
+4. The store (`useSkillsStore`) can be used elsewhere to access `selectedSkills` and `confirmedSkills`.
 
-### Progress bars with Rich
+## Dependencies
+- Vue 3
+- Vitest for testing
 
-```python
-from karbonite import RichProgress
-
-with RichProgress("Processing items") as progress:
-    task = progress.add_task("[cyan]Working...", total=100)
-    for i in range(100):
-        # do something
-        progress.update(task, advance=1)
-```
-
-### Parallel execution
-
-```python
-from karbonite import run_parallel
-
-def double(x):
-    return x * 2
-
-results = run_parallel(double, [1, 2, 3, 4, 5])
-print(results)  # [2, 4, 6, 8, 10]
-```
-
-## API Reference
-
-- `RichProgress(description: str = "Working...")` — Context manager yielding a Rich `Progress` instance.
-- `run_parallel(func, items, *args, **kwargs)` — Run `func` on each item concurrently using a multiprocessing Pool.
-- `process_data(...)` — (Core function, see core module for details).
-
-## Testing
-
+## Run Tests
 ```bash
-pytest tests/
+npx vitest run
 ```
