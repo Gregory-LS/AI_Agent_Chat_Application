@@ -1,53 +1,80 @@
-# Static App - State management and rendering module
+# OpenRouter Proxy with SSE Streaming
 
-This module provides a lightweight state management and DOM rendering utility.
+This project provides a lightweight FastAPI server that acts as a proxy to the [OpenRouter API](https://openrouter.ai/). It accepts OpenAI-compatible chat completion requests and streams the responses back using Server-Sent Events (SSE).
 
-## Usage
+## Features
 
-### Import
+- Proxy all chat completion requests to OpenRouter.
+- Stream responses in real-time via SSE.
+- Supports all OpenRouter models.
+- Error forwarding: OpenRouter errors are sent as SSE events.
+- Health check endpoint.
 
-```javascript
-import { createStore, render } from './static/app.js';
+## Requirements
+
+- Python 3.10+
+- An OpenRouter API key
+
+## Setup
+
+1. Clone the repository.
+2. Create a virtual environment and install dependencies:
+   ```bash
+   python -m venv venv
+   source venv/bin/activate  # On Windows: venv\Scripts\activate
+   pip install -r requirements.txt
+   ```
+3. Create a `.env` file in the project root with your OpenRouter API key:
+   ```
+   OPENROUTER_API_KEY=sk-or-v1-...
+   ```
+4. Run the server:
+   ```bash
+   uvicorn server:app --reload
+   ```
+   The server will start at `http://localhost:8000`.
+
+## API Endpoints
+
+### `POST /v1/chat/completions`
+
+Accepts a JSON body identical to the [OpenAI Chat Completion API](https://platform.openai.com/docs/api-reference/chat/create). The `stream` parameter is forced to `true`; all responses are SSE streams.
+
+**Example request:**
+```json
+{
+  "model": "openai/gpt-4o-mini",
+  "messages": [{"role": "user", "content": "Hello!"}],
+  "max_tokens": 512
+}
 ```
 
-### createStore(initialState)
+**Example response (SSE):**
+```
+data: {"id":"chatcmpl-...","object":"chat.completion.chunk","created":...,"model":"openai/gpt-4o-mini","choices":[{"index":0,"delta":{"role":"assistant","content":"Hello"},"finish_reason":null}]}
 
-Creates a reactive store.
-
-- `initialState` (Object): initial state object.
-- Returns an object with:
-  - `getState()` - returns a shallow copy of the current state.
-  - `setState(partial)` - merges partial state and notifies subscribers.
-  - `subscribe(subscriber)` - adds a subscriber function. Returns an unsubscribe function.
-
-```javascript
-const store = createStore({ count: 0 });
-store.subscribe((state) => {
-  console.log('State updated:', state);
-});
-store.setState({ count: 1 });
+data: [DONE]
 ```
 
-### render(selector, html)
+### `GET /health`
 
-Updates the innerHTML of a DOM element identified by selector.
-
-- `selector` (string): CSS selector for the target element.
-- `html` (string): HTML content to set.
-
-```javascript
-render('#app', '<h1>Hello World</h1>');
-```
+Returns `{"status": "ok"}` if the server is running.
 
 ## Testing
 
-Tests are written with [Vitest](https://vitest.dev/). To run:
-
+Run tests with:
 ```bash
-npx vitest run
+pytest tests/
 ```
 
-## Files
+## Configuration
 
-- `static/app.js` - main module
-- `tests/test_app.test.js` - unit tests
+All configuration is via environment variables:
+
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `OPENROUTER_API_KEY` | Yes | Your OpenRouter API key |
+
+## License
+
+MIT
