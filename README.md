@@ -1,43 +1,53 @@
-# Chat Core Module
+# Static App - State management and rendering module
 
-A simple in-memory chat system.
-
-## Features
-
-- Send messages with username and content.
-- Retrieve messages with optional pagination (limit and offset).
-- Clear all messages.
-- Message count property.
+This module provides a lightweight state management and DOM rendering utility.
 
 ## Usage
 
-```python
-from chat.core import Chat
+### Import
 
-chat = Chat()
-chat.send_message("Alice", "Hello!")
-chat.send_message("Bob", "Hi there!")
+```javascript
+import { createStore, render } from './static/app.js';
+```
 
-# Get all messages
-messages = chat.get_messages()
-print(messages)
+### createStore(initialState)
 
-# Get last two messages
-recent = chat.get_messages(limit=2, offset=0)
+Creates a reactive store.
 
-# Clear chat
-chat.clear()
+- `initialState` (Object): initial state object.
+- Returns an object with:
+  - `getState()` - returns a shallow copy of the current state.
+  - `setState(partial)` - merges partial state and notifies subscribers.
+  - `subscribe(subscriber)` - adds a subscriber function. Returns an unsubscribe function.
+
+```javascript
+const store = createStore({ count: 0 });
+store.subscribe((state) => {
+  console.log('State updated:', state);
+});
+store.setState({ count: 1 });
+```
+
+### render(selector, html)
+
+Updates the innerHTML of a DOM element identified by selector.
+
+- `selector` (string): CSS selector for the target element.
+- `html` (string): HTML content to set.
+
+```javascript
+render('#app', '<h1>Hello World</h1>');
 ```
 
 ## Testing
 
-Run tests with pytest:
+Tests are written with [Vitest](https://vitest.dev/). To run:
 
 ```bash
-pytest tests/
+npx vitest run
 ```
 
-## Requirements
+## Files
 
-- Python 3.8+
-- No external dependencies.
+- `static/app.js` - main module
+- `tests/test_app.test.js` - unit tests
