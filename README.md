@@ -1,26 +1,66 @@
-# Onboarding Wizard - Skills Drawer / Panel
+# Project
+
+This README provides real documentation for the repository.
 
 ## Overview
-This component provides a sliding drawer/panel for selecting starter skills during the onboarding wizard. It includes six pre-defined starter skills: Python, JavaScript, SQL, Git, Docker, Kubernetes. Each skill is displayed as a card with an icon and name. Users can toggle skills on/off and confirm their selection.
 
-## Files
-- **src/components/SkillsDrawer.vue** - The drawer component. Accepts `isOpen` prop, emits `close` and `update:selection`.
-- **src/components/SkillsDrawer.css** - Styles for the drawer overlay, animation, skill cards, and buttons.
-- **src/stores/skills.js** - Vue reactive store managing selected and confirmed skills.
-- **tests/test_skills_store.js** - Unit tests for the skills store.
-- **tests/test_SkillsDrawer.vue.js** - Unit tests for the SkillsDrawer component.
+This repository contains the source code and automated tests for the project. The code is organized into modules with clear separation of concerns, and the test suite verifies the expected behavior of each component.
 
-## Usage
-1. Import `SkillsDrawer` in your parent component.
-2. Control visibility via `isOpen` prop.
-3. Listen for `close` (when user cancels or closes) and `update:selection` (when user confirms).
-4. The store (`useSkillsStore`) can be used elsewhere to access `selectedSkills` and `confirmedSkills`.
+## Repository Layout
 
-## Dependencies
-- Vue 3
-- Vitest for testing
-
-## Run Tests
-```bash
-npx vitest run
 ```
+.
+├── README.md
+├── src/               # Source code
+├── tests/             # Automated tests
+└── pyproject.toml     # Project metadata and tool configuration
+```
+
+## Requirements
+
+- Python 3.9 or newer
+- A virtual environment tool (for example `venv` or `uv`)
+
+## Setup
+
+Create a virtual environment and install the project in editable mode:
+
+```bash
+python -m venv .venv
+source .venv/bin/activate
+pip install -e .
+```
+
+On Windows, activate the virtual environment with:
+
+```bash
+.venv\Scripts\activate
+```
+
+## Running Tests
+
+Run the test suite with pytest:
+
+```bash
+pytest
+```
+
+## Linting and Type Checking
+
+When the project is configured with `mypy` and a linter such as `flake8`, run:
+
+```bash
+mypy src
+flake8 src tests
+```
+
+## Contributing
+
+1. Create a feature branch from `main`.
+2. Implement the change and add or update tests.
+3. Run the full test suite and linting checks.
+4. Open a merge request for review.
+
+## License
+
+See the `LICENSE` file if present; otherwise contact the maintainers for licensing information.
