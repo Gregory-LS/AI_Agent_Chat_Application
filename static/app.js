@@ -1,83 +1,68 @@
-(function () {
-  'use strict';
+/**
+ * Simple state management and rendering utility.
+ * Provides a createStore function for reactive state and a render function
+ * to update the DOM based on a template.
+ */
 
-  var loadButton = document.getElementById('load-btn');
-  var itemsList = document.getElementById('items');
-  var loadingStatus = document.getElementById('loading-status');
-  var toast = document.getElementById('toast');
-  var main = document.querySelector('main');
-  var toastTimer = null;
+/**
+ * Creates a store with reactive state.
+ * @param {Object} initialState - The initial state object.
+ * @returns {Object} Store with getState, setState, and subscribe methods.
+ */
+export function createStore(initialState = {}) {
+  let state = { ...initialState };
+  const listeners = new Set();
 
-  function setLoading(isLoading) {
-    loadButton.disabled = isLoading;
-    loadingStatus.hidden = !isLoading;
-    main.setAttribute('aria-busy', String(isLoading));
+  /**
+   * Returns the current state (shallow copy).
+   * @returns {Object}
+   */
+  function getState() {
+    return { ...state };
   }
 
-  function renderItems(items) {
-    itemsList.textContent = '';
-
-    if (!items || items.length === 0) {
-      var emptyItem = document.createElement('li');
-      emptyItem.className = 'item';
-      emptyItem.textContent = 'No tasks found.';
-      itemsList.appendChild(emptyItem);
-      return;
-    }
-
-    var fragment = document.createDocumentFragment();
-    items.forEach(function (item) {
-      var listItem = document.createElement('li');
-      listItem.className = 'item';
-      listItem.textContent = item.title;
-      fragment.appendChild(listItem);
-    });
-    itemsList.appendChild(fragment);
+  /**
+   * Updates state by merging the given partial state.
+   * Notifies all subscribed listeners.
+   * @param {Object} newState - Partial state to merge.
+   */
+  function setState(newState) {
+    state = { ...state, ...newState };
+    listeners.forEach((listener) => listener(state));
   }
 
-  function hideToast() {
-    toast.classList.remove('toast--visible');
-    toastTimer = null;
-    window.setTimeout(function () {
-      if (!toast.classList.contains('toast--visible')) {
-        toast.hidden = true;
-      }
-    }, 250);
+  /**
+   * Subscribes a listener function that is called on every state change.
+   * @param {Function} listener - Called with the new state.
+   * @returns {Function} Unsubscribe function.
+   */
+  function subscribe(listener) {
+    listeners.add(listener);
+    return () => listeners.delete(listener);
   }
 
-  function showToast(message) {
-    if (toastTimer) {
-      window.clearTimeout(toastTimer);
-    }
-    toast.textContent = message;
-    toast.hidden = false;
-    requestAnimationFrame(function () {
-      toast.classList.add('toast--visible');
-    });
-    toastTimer = window.setTimeout(hideToast, 5000);
+  return { getState, setState, subscribe };
+}
+
+/**
+ * Renders a template function into a DOM element.
+ * The template receives the current state and returns an HTML string.
+ * @param {Function} template - (state) => htmlString
+ * @param {HTMLElement} root - The DOM element to render into.
+ * @returns {Function} A function to update the rendering with new state.
+ */
+export function render(template, root) {
+  if (!root || !(root instanceof HTMLElement)) {
+    throw new Error('render requires a valid HTMLElement as root');
   }
 
-  async function loadTasks() {
-    setLoading(true);
-    itemsList.textContent = '';
-
-    try {
-      var response = await fetch('/api/data', {
-        headers: { 'Accept': 'application/json' }
-      });
-
-      if (!response.ok) {
-        throw new Error('The server could not load your tasks. Please try again.');
-      }
-
-      var data = await response.json();
-      renderItems(data.items || []);
-    } catch (error) {
-      showToast(error.message || 'Something went wrong.');
-    } finally {
-      setLoading(false);
-    }
+  /**
+   * Update the DOM with the given state.
+   * @param {Object} state - The state to render.
+   */
+  function update(state) {
+    root.innerHTML = template(state);
   }
 
-  loadButton.addEventListener('click', loadTasks);
-})();
+  return update;
+}
