@@ -1,47 +1,31 @@
-# Conversation Sidebar
+# Model Picker UI
 
-Persistent conversation history management for multi-turn AI interactions.
+This project provides a reusable `ModelPicker` UI component built with Tkinter.
+It allows users to select a machine learning model from a dropdown list.
+
+## Features
+
+- Dropdown list populated with available model names.
+- Read-only state when no models are available.
+- Callback function triggered on model selection.
+- Dynamic update of model list.
 
 ## Usage
 
 ```python
-from conversation_manager import ConversationManager
+import tkinter as tk
+from app.model_picker import ModelPicker
 
-manager = ConversationManager("conversations.json")
+def on_model_selected(model):
+    print(f"Selected model: {model}")
 
-manager.add_message("session-1", "user", "What is AI?")
-manager.add_message("session-1", "assistant", "Artificial Intelligence...")
-
-history = manager.get_conversation("session-1")
-print(history)
-
-# List all conversations
-print(manager.list_conversations())
-
-# Delete a conversation
-manager.delete_conversation("session-1")
+root = tk.Tk()
+picker = ModelPicker(root, ["GPT-4", "BERT", "T5"], on_model_selected)
+root.mainloop()
 ```
 
-## API
-
-### `add_message(conversation_id, role, content)`
-Adds a message to a conversation. Creates a new conversation if the ID doesn't exist.
-
-### `get_conversation(conversation_id)`
-Returns a list of message dicts (`{"role": ..., "content": ...}`). Returns empty list if not found.
-
-### `list_conversations()`
-Returns a list of all conversation IDs.
-
-### `delete_conversation(conversation_id)`
-Deletes a conversation. Returns `True` if deleted, `False` if not found.
-
-## Persistence
-
-All conversations are stored in a JSON file specified at initialization (default: `conversations.json`).
-
-## Testing
+## Running Tests
 
 ```bash
-pytest tests/test_conversation_manager.py -v
+python -m unittest tests.test_model_picker
 ```
