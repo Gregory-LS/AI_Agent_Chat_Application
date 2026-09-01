@@ -1,26 +1,56 @@
-# Onboarding Wizard - Skills Drawer / Panel
+# Model Picker UI Component
 
-## Overview
-This component provides a sliding drawer/panel for selecting starter skills during the onboarding wizard. It includes six pre-defined starter skills: Python, JavaScript, SQL, Git, Docker, Kubernetes. Each skill is displayed as a card with an icon and name. Users can toggle skills on/off and confirm their selection.
+A simple Tkinter-based UI component for selecting AI models from a list.
 
-## Files
-- **src/components/SkillsDrawer.vue** - The drawer component. Accepts `isOpen` prop, emits `close` and `update:selection`.
-- **src/components/SkillsDrawer.css** - Styles for the drawer overlay, animation, skill cards, and buttons.
-- **src/stores/skills.js** - Vue reactive store managing selected and confirmed skills.
-- **tests/test_skills_store.js** - Unit tests for the skills store.
-- **tests/test_SkillsDrawer.vue.js** - Unit tests for the SkillsDrawer component.
+## Features
+
+- Display a list of available models.
+- Filter models by typing in a search box (case-insensitive).
+- Select a model by clicking on it; triggers a callback.
+- Get the currently selected model programmatically.
 
 ## Usage
-1. Import `SkillsDrawer` in your parent component.
-2. Control visibility via `isOpen` prop.
-3. Listen for `close` (when user cancels or closes) and `update:selection` (when user confirms).
-4. The store (`useSkillsStore`) can be used elsewhere to access `selectedSkills` and `confirmedSkills`.
 
-## Dependencies
-- Vue 3
-- Vitest for testing
+```python
+import tkinter as tk
+from model_picker import ModelPicker
 
-## Run Tests
-```bash
-npx vitest run
+root = tk.Tk()
+root.title("Model Selection")
+
+models = ["gpt-3.5", "gpt-4", "claude-2", "llama-2", "bert-base"]
+
+def on_model_selected(model_name):
+    print(f"Selected model: {model_name}")
+
+picker = ModelPicker(root, models, on_select=on_model_selected)
+
+root.mainloop()
 ```
+
+## API
+
+### `ModelPicker(parent, models, on_select=None)`
+
+- `parent`: The parent Tkinter widget.
+- `models`: A list of model name strings.
+- `on_select`: Optional callback function that receives the selected model name.
+
+### Methods
+
+- `get_selected()`: Returns the currently selected model name, or `None`.
+- `destroy()`: Removes the UI component.
+
+## Tests
+
+Run tests with pytest:
+
+```bash
+pytest tests/test_model_picker.py -v
+```
+
+## Files
+
+- `model_picker.py` – Main component.
+- `tests/test_model_picker.py` – Unit tests.
+- `README.md` – This file.
