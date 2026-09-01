@@ -1,54 +1,44 @@
-# OpenRouter SSE Proxy
+# Attachment Handling Module
 
-A small Flask server that proxies `/v1/chat/completions` requests to OpenRouter and streams the results back as Server-Sent Events (SSE).
+This module provides a simple `Attachment` class for handling image and text file attachments.
 
-## Requirements
+## Supported File Types
 
-- Python 3.9+
-- An [OpenRouter API key](https://openrouter.ai/keys)
+- **Images**: PNG, JPEG, GIF
+- **Text**: Plain text (`.txt`), CSV (`.csv`), HTML (`.html`)
 
-## Setup
+## Usage
 
-```bash
-pip install -r requirements.txt
-export OPENROUTER_API_KEY=your_key_here
-python server.py
+```python
+from src.attachment import Attachment
+
+# Create an attachment from a file path
+att = Attachment('path/to/file.txt')
+
+# Get metadata
+print(att.filename)        # 'file.txt'
+print(att.mime_type)       # 'text/plain'
+print(att.size)            # file size in bytes
+print(att.is_image)        # False
+print(att.is_text)         # True
+
+# Read content
+content = att.read_content()  # returns str for text, bytes for images
+
+# Get all metadata as dict
+meta = att.get_metadata()
 ```
 
-The server listens on port `8000` by default. Use `PORT` to change it.
+## Error Handling
 
-## Endpoints
+- `FileNotFoundError` if the file does not exist.
+- `IsADirectoryError` if the path is a directory.
+- `ValueError` if the file type is not supported.
 
-- `POST /v1/chat/completions` - proxy to OpenRouter and stream SSE
-- `POST /api/v1/chat/completions` - alias for the same proxy
-- `GET /health` - health check
+## Testing
 
-## Authentication
-
-Pass an `Authorization: Bearer <key>` header, or set the `OPENROUTER_API_KEY` environment variable. The header takes precedence.
-
-## Example
+Run tests with pytest:
 
 ```bash
-curl -N http://localhost:8000/v1/chat/completions \
-  -H 'Authorization: Bearer $OPENROUTER_API_KEY' \
-  -H 'Content-Type: application/json' \
-  -d '{"model": "openai/gpt-4o", "messages": [{"role": "user", "content": "Hello"}]}'
+pytest tests/test_attachment.py -v
 ```
-
-The response is an SSE stream. The proxy forces `stream: true` upstream.
-
-## Environment variables
-
-- `OPENROUTER_API_KEY` - required unless a Bearer token is sent with the request
-- `OPENROUTER_URL` - optional upstream URL override
-- `OPENROUTER_APP_TITLE` - optional app title sent to OpenRouter as `X-Title`
-- `PORT` - HTTP port to bind (default `8000`)
-
-## Tests
-
-```bash
-pytest
-```
-
-CORS is enabled for browser-based clients.
