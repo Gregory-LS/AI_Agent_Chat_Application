@@ -1,83 +1,72 @@
-(function () {
-  'use strict';
+/**
+ * Simple state management and rendering utility.
+ * @module app
+ */
 
-  var loadButton = document.getElementById('load-btn');
-  var itemsList = document.getElementById('items');
-  var loadingStatus = document.getElementById('loading-status');
-  var toast = document.getElementById('toast');
-  var main = document.querySelector('main');
-  var toastTimer = null;
+/**
+ * Creates a store with a given initial state.
+ * @param {Object} initialState - The initial state object.
+ * @returns {Object} Store with methods: getState, setState, subscribe.
+ */
+function createStore(initialState = {}) {
+  let state = { ...initialState };
+  const listeners = [];
 
-  function setLoading(isLoading) {
-    loadButton.disabled = isLoading;
-    loadingStatus.hidden = !isLoading;
-    main.setAttribute('aria-busy', String(isLoading));
+  /**
+   * Returns the current state.
+   * @returns {Object}
+   */
+  function getState() {
+    return state;
   }
 
-  function renderItems(items) {
-    itemsList.textContent = '';
-
-    if (!items || items.length === 0) {
-      var emptyItem = document.createElement('li');
-      emptyItem.className = 'item';
-      emptyItem.textContent = 'No tasks found.';
-      itemsList.appendChild(emptyItem);
-      return;
-    }
-
-    var fragment = document.createDocumentFragment();
-    items.forEach(function (item) {
-      var listItem = document.createElement('li');
-      listItem.className = 'item';
-      listItem.textContent = item.title;
-      fragment.appendChild(listItem);
-    });
-    itemsList.appendChild(fragment);
+  /**
+   * Updates the state by merging the provided partial state.
+   * Notifies all subscribed listeners after the update.
+   * @param {Object} partialState - Object with properties to merge.
+   */
+  function setState(partialState) {
+    state = { ...state, ...partialState };
+    listeners.forEach(listener => listener(state));
   }
 
-  function hideToast() {
-    toast.classList.remove('toast--visible');
-    toastTimer = null;
-    window.setTimeout(function () {
-      if (!toast.classList.contains('toast--visible')) {
-        toast.hidden = true;
+  /**
+   * Subscribes a listener function that is called whenever the state changes.
+   * @param {Function} listener - Callback receiving the new state.
+   * @returns {Function} Unsubscribe function.
+   */
+  function subscribe(listener) {
+    listeners.push(listener);
+    return () => {
+      const index = listeners.indexOf(listener);
+      if (index > -1) {
+        listeners.splice(index, 1);
       }
-    }, 250);
+    };
   }
 
-  function showToast(message) {
-    if (toastTimer) {
-      window.clearTimeout(toastTimer);
-    }
-    toast.textContent = message;
-    toast.hidden = false;
-    requestAnimationFrame(function () {
-      toast.classList.add('toast--visible');
-    });
-    toastTimer = window.setTimeout(hideToast, 5000);
+  return {
+    getState,
+    setState,
+    subscribe
+  };
+}
+
+/**
+ * Renders the view based on the store's state and keeps it updated.
+ * @param {Object} store - The store object (from createStore).
+ * @param {HTMLElement} root - The DOM element to render into.
+ * @param {Function} renderFn - Function that receives state and returns HTML string.
+ * @returns {Function} Unsubscribe function.
+ */
+function render(store, root, renderFn) {
+  function update() {
+    root.innerHTML = renderFn(store.getState());
   }
+  update();
+  return store.subscribe(update);
+}
 
-  async function loadTasks() {
-    setLoading(true);
-    itemsList.textContent = '';
-
-    try {
-      var response = await fetch('/api/data', {
-        headers: { 'Accept': 'application/json' }
-      });
-
-      if (!response.ok) {
-        throw new Error('The server could not load your tasks. Please try again.');
-      }
-
-      var data = await response.json();
-      renderItems(data.items || []);
-    } catch (error) {
-      showToast(error.message || 'Something went wrong.');
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  loadButton.addEventListener('click', loadTasks);
-})();
+if (typeof module !== 'undefined' && module.exports) {
+  module.exports = { createStore, render };
+}
