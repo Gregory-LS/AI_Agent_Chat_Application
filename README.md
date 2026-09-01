@@ -1,52 +1,34 @@
-# Conversation Sidebar
+# My Flask App
 
-A React component for displaying a list of conversations.
+A simple Flask application demonstrating endpoints with error handling and extras.
 
 ## Features
 
-- View list of conversations
-- Search/filter conversations by name
-- Click to select a conversation
-- Create new conversation
-- Shows last message preview and timestamp
+- **GET /** - Returns a greeting message.
+- **POST /data** - Accepts JSON with a "name" field (string, non-empty). Returns a personalized greeting.
+- **GET /extras** - Returns random generated data. Accepts optional query parameter `type`:
+  - `all` (default): returns random string, integer, and float.
+  - `random_string`: returns a random string.
+  - `random_int`: returns a random integer between 1 and 1000.
+  - `random_float`: returns a random float between 0 and 100 (2 decimal places).
 
-## Usage
+## Error Handling
 
-```jsx
-import Sidebar from './components/Sidebar';
+- 400 for bad requests (missing JSON, missing/invalid fields, invalid query parameters)
+- 404 for unknown routes
+- 405 for unsupported HTTP methods
+- 500 for unexpected server errors (with logging)
 
-<Sidebar
-  conversations={conversations}
-  onSelect={(id) => console.log('Selected:', id)}
-  onCreateNew={() => console.log('New conversation')}
-/>
-```
-
-## Props
-
-| Prop | Type | Description |
-|------|------|-------------|
-| conversations | Array | Array of conversation objects: { id, name, lastMessage?, updatedAt? } |
-| onSelect | Function | Called when a conversation is clicked, receives the conversation id |
-| onCreateNew | Function | Called when the "+ New" button is clicked |
-| currentUserId | (optional) | The current user's id (for future use) |
-
-## Development
-
-Install dependencies:
+## Running
 
 ```bash
-npm install
+python app.py
 ```
 
-Run tests:
+The app runs on http://localhost:5000 by default.
+
+## Tests
 
 ```bash
-npm test
+pytest tests/
 ```
-
-## Files
-
-- `src/components/Sidebar.jsx` - React component
-- `src/components/Sidebar.css` - Styles
-- `tests/test_Sidebar.jsx` - Unit tests
