@@ -1,68 +1,44 @@
-# Project Title
+# State Management and Rendering Utility
 
-## Overview
+This module provides a simple state management store (`createStore`) and a DOM rendering helper (`render`).
 
-This project is a multi-agent software development workflow system. It uses GitLab issues to assign tickets to worker agents, who then complete the tasks and submit merge requests for review by an orchestrator agent.
+## Functions
 
-## Requirements
+### `createStore(initialState)`
 
-- Python 3.8+
-- GitLab account with API access
-- `python-gitlab` library (for GitLab API interactions)
-- `pytest` (for running tests)
+Creates a store with the given initial state. Returns an object with:
 
-## Installation
+- `getState()` – returns the current state object.
+- `setState(partialState)` – merges `partialState` into the current state and notifies all subscribers.
+- `subscribe(listener)` – adds a listener that is called with the new state after every update. Returns an unsubscribe function.
 
-1. Clone the repository:
+### `render(store, root, renderFn)`
 
-   ```bash
-   git clone <repository-url>
-   cd <repository-directory>
-   ```
+Renders the view initially and on every state change. 
 
-2. Install the required Python packages:
+- `store` – a store created by `createStore`.
+- `root` – a DOM element (or mock with `innerHTML`).
+- `renderFn` – function that receives the current state and returns an HTML string.
 
-   ```bash
-   pip install -r requirements.txt
-   ```
+Returns an unsubscribe function to stop updating the view.
 
-3. Set up your GitLab API token and project ID as environment variables:
+## Usage Example
 
-   ```bash
-   export GITLAB_TOKEN=<your-token>
-   export GITLAB_PROJECT_ID=<your-project-id>
-   ```
+```javascript
+const { createStore, render } = require('./static/app');
 
-## Usage
+const store = createStore({ count: 0 });
+const root = document.getElementById('app');
+render(store, root, (state) => `<h1>Count: ${state.count}</h1>`);
 
-To run the worker agent:
+store.setState({ count: 1 });
+// DOM updates automatically
+```
+
+## Running Tests
 
 ```bash
-python worker.py
+node --experimental-vm-modules tests/test_app.js
 ```
 
-The worker will fetch the next open ticket assigned to it, complete the task, and create a merge request with the changes.
-
-## Testing
-
-Run the tests using pytest:
-
-```bash
-pytest tests/
-```
-
-## Project Structure
-
-```
-.
-├── README.md
-├── requirements.txt
-├── worker.py
-├── tests/
-│   └── test_worker.py
-└── .gitlab-ci.yml
-```
-
-## Contributing
-
-Please follow the standard GitLab workflow: create a branch, make your changes, and submit a merge request for review.
+(If using CommonJS, simply `node tests/test_app.js`)
