@@ -1,61 +1,109 @@
-const assert = require('assert');
-const { createStore, render } = require('../static/app');
+/**
+ * Unit tests for app.js using a minimal assertion framework (compatible with Node or browser).
+ * Run with a test runner like Mocha or QUnit, or simply import and run in a browser.
+ */
 
-describe('createStore', function() {
-  it('should create a store with initial state', function() {
-    const store = createStore({ count: 0 });
-    assert.deepStrictEqual(store.getState(), { count: 0 });
-  });
+import { createState, render } from '../static/app.js';
 
-  it('should update state with setState', function() {
-    const store = createStore({ count: 0 });
-    store.setState({ count: 1 });
-    assert.deepStrictEqual(store.getState(), { count: 1 });
-  });
+let passed = 0;
+let failed = 0;
 
-  it('should merge state with setState', function() {
-    const store = createStore({ a: 1, b: 2 });
-    store.setState({ b: 3 });
-    assert.deepStrictEqual(store.getState(), { a: 1, b: 3 });
-  });
+function assert(condition, message) {
+  if (condition) {
+    passed++;
+    console.log(`PASS: ${message}`);
+  } else {
+    failed++;
+    console.error(`FAIL: ${message}`);
+  }
+}
 
-  it('should notify subscribers on state change', function() {
-    const store = createStore({ count: 0 });
-    let notified = false;
-    store.subscribe((newState) => {
-      notified = true;
-      assert.strictEqual(newState.count, 1);
-    });
-    store.setState({ count: 1 });
-    assert.ok(notified);
-  });
+function assertEqual(actual, expected, message) {
+  if (actual === expected) {
+    passed++;
+    console.log(`PASS: ${message}`);
+  } else {
+    failed++;
+    console.error(`FAIL: ${message} — expected ${expected}, got ${actual}`);
+  }
+}
 
-  it('should not notify after unsubscribe', function() {
-    const store = createStore({ count: 0 });
-    let callCount = 0;
-    const unsubscribe = store.subscribe(() => { callCount++; });
-    unsubscribe();
-    store.setState({ count: 1 });
-    assert.strictEqual(callCount, 0);
-  });
+// ---------- Tests for createState ----------
+
+// Basic get/set
+const state1 = createState(10);
+assertEqual(state1.get(), 10, 'createState(10) initial value should be 10');
+state1.set(20);
+assertEqual(state1.get(), 20, 'After set(20), get() should be 20');
+
+// Subscriber notification
+const state2 = createState('hello');
+let receivedValue = null;
+const unsubscribe = state2.subscribe((val) => {
+  receivedValue = val;
 });
+state2.set('world');
+assertEqual(receivedValue, 'world', 'Subscriber should receive new value on set');
 
-describe('render', function() {
-  it('should render initial state and update on change', function() {
-    const store = createStore({ count: 0 });
-    const root = { innerHTML: '' };
-    const renderFn = (state) => `<p>${state.count}</p>`;
-    const unsubscribe = render(store, root, renderFn);
-    assert.strictEqual(root.innerHTML, '<p>0</p>');
-    store.setState({ count: 5 });
-    assert.strictEqual(root.innerHTML, '<p>5</p>');
-    unsubscribe();
-  });
+// Unsubscribe
+receivedValue = null;
+unsubscribe();
+state2.set('foo');
+assertEqual(receivedValue, null, 'After unsubscribe, subscriber should not be called');
 
-  it('should return unsubscribe function', function() {
-    const store = createStore();
-    const root = { innerHTML: '' };
-    const unsub = render(store, root, () => '');
-    assert.strictEqual(typeof unsub, 'function');
-  });
-});
+// Multiple subscribers
+const state3 = createState(0);
+let count1 = 0;
+let count2 = 0;
+state3.subscribe(() => count1++);
+state3.subscribe(() => count2++);
+state3.set(1);
+assertEqual(count1, 1, 'First subscriber called once after set');
+assertEqual(count2, 1, 'Second subscriber called once after set');
+
+// No update if same reference
+const state4 = createState({ a: 1 });
+let callCount = 0;
+state4.subscribe(() => callCount++);
+state4.set({ a: 1 }); // different object – should trigger
+assertEqual(callCount, 1, 'Setting a new object with same content should trigger update');
+callCount = 0;
+state4.set(state4.get()); // same reference – should not trigger
+assertEqual(callCount, 0, 'Setting the exact same reference should not trigger update');
+
+// ---------- Tests for render ----------
+
+// Mock document for testing
+const mockElement = { innerHTML: '' };
+const originalGetElementById = document.getElementById;
+document.getElementById = (id) => {
+  if (id === 'test-root') {
+    return mockElement;
+  }
+  return null;
+};
+
+// Render to existing element
+try {
+  render('test-root', '<p>Hello</p>');
+  assertEqual(mockElement.innerHTML, '<p>Hello</p>', 'render should set innerHTML correctly');
+} catch (e) {
+  assert(false, 'render to existing element should not throw');
+}
+
+// Render to non-existing element
+try {
+  render('non-existent', 'anything');
+  assert(false, 'render should throw if element not found');
+} catch (e) {
+  assert(true, 'render throws when element not found');
+}
+
+// Restore mock
+document.getElementById = originalGetElementById;
+
+// ---------- Summary ----------
+console.log(`\n${passed} passed, ${failed} failed`);
+if (failed > 0) {
+  process.exit(1);
+}
