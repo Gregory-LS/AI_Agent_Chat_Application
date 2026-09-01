@@ -1,47 +1,47 @@
-# TaskBuddy
+# Conversation Sidebar
 
-A small, dependency-free web app that shows how to add polish to any web UI:
+Persistent conversation history management for multi-turn AI interactions.
 
-- **Loading states** — a `role=status` region with a spinner and disabled button while data is fetched.
-- **Error toasts** — an `role=alert` toast that announces server errors and disappears automatically.
-- **Accessibility** — skip link, semantic landmarks, focus-visible styles, `aria-live`, `aria-busy`, and reduced-motion support.
+## Usage
 
-## Run the app
+```python
+from conversation_manager import ConversationManager
 
-```bash
-python app.py
+manager = ConversationManager("conversations.json")
+
+manager.add_message("session-1", "user", "What is AI?")
+manager.add_message("session-1", "assistant", "Artificial Intelligence...")
+
+history = manager.get_conversation("session-1")
+print(history)
+
+# List all conversations
+print(manager.list_conversations())
+
+# Delete a conversation
+manager.delete_conversation("session-1")
 ```
-
-Then open <http://127.0.0.1:8000>.
 
 ## API
 
-`GET /api/data` returns a JSON object with an `items` list.
+### `add_message(conversation_id, role, content)`
+Adds a message to a conversation. Creates a new conversation if the ID doesn't exist.
 
-Query parameters:
+### `get_conversation(conversation_id)`
+Returns a list of message dicts (`{"role": ..., "content": ...}`). Returns empty list if not found.
 
-| Parameter | Default | Description                             |
-|-----------|---------|-----------------------------------------|
-| `delay`   | `0.6`   | Simulated server latency in seconds     |
-| `fail`    | `0`     | Set to `1` to force a 500 error         |
+### `list_conversations()`
+Returns a list of all conversation IDs.
 
-Example:
+### `delete_conversation(conversation_id)`
+Deletes a conversation. Returns `True` if deleted, `False` if not found.
+
+## Persistence
+
+All conversations are stored in a JSON file specified at initialization (default: `conversations.json`).
+
+## Testing
 
 ```bash
-curl http://127.0.0.1:8000/api/data?delay=0&fail=1
+pytest tests/test_conversation_manager.py -v
 ```
-
-## Run the tests
-
-```bash
-python -m unittest discover -s tests -v
-```
-
-## Accessibility notes
-
-- The skip link lets keyboard users jump to the main content.
-- The loading region uses `role=status` and `aria-live=polite`.
-- The error toast uses `role=alert` and `aria-live=assertive`.
-- Focus indicators are visible and high contrast.
-- `prefers-reduced-motion` is respected.
-- The button is disabled during loading to avoid duplicate requests.
