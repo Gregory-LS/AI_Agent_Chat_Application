@@ -1,28 +1,47 @@
-# Chat Application
+# Karbonite
 
-This is a simple chat application core that provides:
-- **Message**: A data class representing a single message.
-- **ChatHistory**: Manages conversation history (add, get, clear, last message).
-- **ChatService**: High-level service to send messages and retrieve history.
+A Python toolkit for data processing utilities.
+
+## Installation
+
+```bash
+pip install karbonite
+```
 
 ## Usage
 
+### Progress bars with Rich
+
 ```python
-from chat_core import ChatService
+from karbonite import RichProgress
 
-service = ChatService()
-service.send_message("Hello, world!")
-history = service.get_conversation_history()
-print(history)
+with RichProgress("Processing items") as progress:
+    task = progress.add_task("[cyan]Working...", total=100)
+    for i in range(100):
+        # do something
+        progress.update(task, advance=1)
 ```
 
-## Tests
+### Parallel execution
 
-Run tests with:
+```python
+from karbonite import run_parallel
+
+def double(x):
+    return x * 2
+
+results = run_parallel(double, [1, 2, 3, 4, 5])
+print(results)  # [2, 4, 6, 8, 10]
+```
+
+## API Reference
+
+- `RichProgress(description: str = "Working...")` — Context manager yielding a Rich `Progress` instance.
+- `run_parallel(func, items, *args, **kwargs)` — Run `func` on each item concurrently using a multiprocessing Pool.
+- `process_data(...)` — (Core function, see core module for details).
+
+## Testing
+
 ```bash
-pytest tests/test_chat_core.py -v
+pytest tests/
 ```
-
-## Files
-- `chat_core.py` - Core implementation
-- `tests/test_chat_core.py` - Unit tests
