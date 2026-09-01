@@ -1,111 +1,76 @@
-from pathlib import Path
-
+import os
+import sys
+import io
+import json
+import tempfile
 import pytest
+from app import app, db, Attachment
 
-from attachments import (
-    Attachment,
-    AttachmentNotFoundError,
-    AttachmentStore,
-    ValidationError,
-)
+@pytest.fixture
+def client():
+    app.config['TESTING'] = True
+    app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///:memory:'
+    app.config['UPLOAD_FOLDER'] = tempfile.mkdtemp()
+    app.config['WTF_CSRF_ENABLED'] = False
+    with app.test_client() as client:
+        with app.app_context():
+            db.create_all()
+        yield client
+    # Cleanup
+    with app.app_context():
+        db.drop_all()
 
+def test_index_returns_form(client):
+    """Test that main page loads and shows upload form."""
+    response = client.get('/')
+    assert response.status_code == 200
+    assert b'Upload Attachment' in response.data
 
-@pytest.fixture()
-def store(tmp_path: Path) -> AttachmentStore:
-    return AttachmentStore(storage_dir=tmp_path / 'attachments')
+def test_upload_valid_file(client):
+    """Test uploading a valid txt file."""
+    data = {'file': (io.BytesIO(b'Hello, world!'), 'test.txt')}
+    response = client.post('/upload', data=data, follow_redirects=True)
+    assert response.status_code == 200
+    assert b'File uploaded successfully' in response.data
 
+def test_upload_no_file(client):
+    """Test upload with no file part."""
+    response = client.post('/upload', data={}, follow_redirects=True)
+    assert b'No file part' in response.data
 
-def build_attachment(**overrides) -> Attachment:
-    values = {
-        'filename': 'notes.txt',
-        'content_type': 'text/plain',
-        'data': b'hello attachments',
-    }
-    values.update(overrides)
-    return Attachment(**values)
+def test_upload_empty_filename(client):
+    """Test upload with empty filename."""
+    data = {'file': (io.BytesIO(b'some content'), '')}
+    response = client.post('/upload', data=data, follow_redirects=True)
+    assert b'No selected file' in response.data
 
+def test_upload_disallowed_type(client):
+    """Test uploading a file with disallowed extension."""
+    data = {'file': (io.BytesIO(b'<?php...'), 'shell.php')}
+    response = client.post('/upload', data=data, follow_redirects=True)
+    assert b'File type not allowed' in response.data
 
-def test_save_and_load_round_trip(store):
-    original = build_attachment(metadata={'user_id': 42, 'labels': ['docs']})
+def test_list_attachments_json(client):
+    """Test JSON endpoint returns empty list."""
+    response = client.get('/attachments')
+    assert response.status_code == 200
+    assert response.json == []
 
-    saved = store.save(original)
+def test_upload_and_list(client):
+    """Test upload and then check JSON list contains the file."""
+    data = {'file': (io.BytesIO(b'Attachment content'), 'notes.txt')}
+    client.post('/upload', data=data, follow_redirects=True)
+    response = client.get('/attachments')
+    assert response.status_code == 200
+    attachments = response.json
+    assert len(attachments) == 1
+    assert attachments[0]['original_filename'] == 'notes.txt'
+    assert attachments[0]['file_size'] == len(b'Attachment content')
 
-    loaded = store.load(saved.attachment_id)
-    assert loaded.attachment_id == saved.attachment_id
-    assert loaded.filename == original.filename
-    assert loaded.content_type == original.content_type
-    assert loaded.data == original.data
-    assert loaded.metadata == original.metadata
-
-
-def test_save_generates_valid_id(store):
-    saved = store.save(build_attachment())
-
-    assert len(saved.attachment_id) > 0
-    assert all(c.isalnum() or c in '-_' for c in saved.attachment_id)
-
-
-def test_save_preserves_provided_id(store):
-    saved = store.save(build_attachment(attachment_id='my-file'))
-
-    assert saved.attachment_id == 'my-file'
-    assert store.load('my-file').filename == 'notes.txt'
-
-
-def test_rejects_too_large(tmp_path):
-    store = AttachmentStore(tmp_path / 'medium', max_size=4)
-
-    with pytest.raises(ValidationError, match='maximum allowed'):
-        store.save(build_attachment(data=b'12345'))
-
-
-def test_rejects_disallowed_content_type(store):
-    with pytest.raises(ValidationError, match='content type'):
-        store.save(build_attachment(content_type='application/x-unknown'))
-
-
-@pytest.mark.parametrize(
-    'filename',
-    ['', '.', '..', '../evil.sh', 'dir/evil.sh', 'evil.sh' + chr(92)],
-)
-def test_rejects_unsafe_filename(store, filename):
-    with pytest.raises(ValidationError, match='filename'):
-        store.save(build_attachment(filename=filename))
-
-
-def test_load_rejects_invalid_id(store):
-    with pytest.raises(ValueError):
-        store.load('../bad')
-
-
-def test_load_missing_attachment(store):
-    with pytest.raises(AttachmentNotFoundError):
-        store.load('doesnotexist')
-
-
-def test_delete_removes_attachment(store):
-    saved = store.save(build_attachment())
-
-    assert store.exists(saved.attachment_id) is True
-    assert store.delete(saved.attachment_id) is True
-    assert store.exists(saved.attachment_id) is False
-    assert store.delete(saved.attachment_id) is False
-
-
-def test_list_attachments(store):
-    first = store.save(build_attachment(filename='a.txt', data=b'a'))
-    second = store.save(build_attachment(filename='b.txt', data=b'bb'))
-
-    assert set(store.list_ids()) == {first.attachment_id, second.attachment_id}
-    assert len(store.list_attachments()) == 2
-
-
-def test_attachment_from_file(tmp_path):
-    path = tmp_path / 'sample.bin'
-    path.write_bytes(bytes([0, 1]))
-
-    attachment = Attachment.from_file(path, content_type='application/octet-stream')
-
-    assert attachment.filename == 'sample.bin'
-    assert attachment.data == bytes([0, 1])
-    assert attachment.size == 2
+def test_file_size_limit(client):
+    """Test that very large file is rejected (max 16MB)."""
+    app.config['MAX_CONTENT_LENGTH'] = 10  # Set very low for test
+    data = {'file': (io.BytesIO(b'A' * 100), 'large.txt')}
+    response = client.post('/upload', data=data)
+    # Werkzeug returns 413 for Request Entity Too Large
+    assert response.status_code == 413

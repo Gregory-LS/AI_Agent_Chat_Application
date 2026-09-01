@@ -1,158 +1,78 @@
-from __future__ import annotations
-
-import json
 import os
 import uuid
-from datetime import datetime, timezone
-from pathlib import Path
-from typing import Any, Dict, List, Optional
+from flask import Flask, render_template, request, redirect, url_for, flash, jsonify, send_from_directory
+from werkzeug.utils import secure_filename
+from models import db, Attachment
 
-from flask import Flask, jsonify, request, send_from_directory
-from werkzeug.exceptions import BadRequest, NotFound
+app = Flask(__name__)
+app.secret_key = 'change-this-to-a-random-secret'
+app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///attachments.db'
+app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+app.config['UPLOAD_FOLDER'] = 'uploads'
+app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16 MB
+ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'pdf', 'txt', 'zip', 'docx'}
 
-DATA_DIR = Path(os.environ.get('SKILLS_DATA_DIR', 'data'))
-DEFAULT_DATA_FILE = DATA_DIR / 'skills.json'
+db.init_app(app)
 
+with app.app_context():
+    db.create_all()
+    if not os.path.exists(app.config['UPLOAD_FOLDER']):
+        os.makedirs(app.config['UPLOAD_FOLDER'])
 
-def _utcnow() -> str:
-    return datetime.now(timezone.utc).isoformat()
+def allowed_file(filename):
+    return '.' in filename and \
+           filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
+@app.route('/')
+def index():
+    attachments = Attachment.query.order_by(Attachment.uploaded_at.desc()).all()
+    return render_template('upload.html', attachments=attachments)
 
-def _load_skills(data_file: Path) -> List[Dict[str, Any]]:
-    if not data_file.exists():
-        return []
-    try:
-        with data_file.open('r', encoding='utf-8') as handle:
-            data = json.load(handle)
-    except (json.JSONDecodeError, OSError):
-        return []
-    if isinstance(data, list):
-        return [item for item in data if isinstance(item, dict)]
-    return []
+@app.route('/upload', methods=['POST'])
+def upload_file():
+    if 'file' not in request.files:
+        flash('No file part')
+        return redirect(url_for('index'))
+    file = request.files['file']
+    if file.filename == '':
+        flash('No selected file')
+        return redirect(url_for('index'))
+    if file and allowed_file(file.filename):
+        filename = secure_filename(file.filename)
+        # Add a unique prefix to avoid overwrites
+        unique_filename = str(uuid.uuid4()) + '_' + filename
+        file_path = os.path.join(app.config['UPLOAD_FOLDER'], unique_filename)
+        file.save(file_path)
+        # Save metadata to database
+        attachment = Attachment(
+            original_filename=filename,
+            stored_filename=unique_filename,
+            file_size=os.path.getsize(file_path),
+            content_type=file.content_type or 'application/octet-stream'
+        )
+        db.session.add(attachment)
+        db.session.commit()
+        flash('File uploaded successfully')
+        return redirect(url_for('index'))
+    else:
+        flash('File type not allowed')
+        return redirect(url_for('index'))
 
+@app.route('/uploads/<filename>')
+def uploaded_file(filename):
+    return send_from_directory(app.config['UPLOAD_FOLDER'], filename)
 
-def _save_skills(skills: List[Dict[str, Any]], data_file: Path) -> None:
-    data_file.parent.mkdir(parents=True, exist_ok=True)
-    with data_file.open('w', encoding='utf-8') as handle:
-        json.dump(skills, handle, indent=2, ensure_ascii=False)
-
-
-def _find_skill_index(skills: List[Dict[str, Any]], skill_id: str) -> Optional[int]:
-    for index, skill in enumerate(skills):
-        if skill.get('id') == skill_id:
-            return index
-    return None
-
-
-def _find_skill(skills: List[Dict[str, Any]], skill_id: str) -> Optional[Dict[str, Any]]:
-    index = _find_skill_index(skills, skill_id)
-    if index is None:
-        return None
-    return skills[index]
-
-
-def validate_skill_payload(payload: Optional[Dict[str, Any]]) -> Dict[str, Any]:
-    if not isinstance(payload, dict):
-        raise BadRequest('A JSON object is required.')
-    if 'name' not in payload:
-        raise BadRequest('Skill name is required.')
-    name = str(payload.get('name', '')).strip()
-    if not name:
-        raise BadRequest('Skill name cannot be empty.')
-    if len(name) > 100:
-        raise BadRequest('Skill name must be 100 characters or fewer.')
-    category = str(payload.get('category', 'General')).strip() or 'General'
-    if len(category) > 50:
-        raise BadRequest('Category must be 50 characters or fewer.')
-    proficiency = payload.get('proficiency', 1)
-    try:
-        proficiency = int(proficiency)
-    except (TypeError, ValueError):
-        raise BadRequest('Proficiency must be an integer.')
-    if proficiency < 1 or proficiency > 5:
-        raise BadRequest('Proficiency must be between 1 and 5.')
-    description = str(payload.get('description', '')).strip()
-    if len(description) > 500:
-        raise BadRequest('Description must be 500 characters or fewer.')
-    return {
-        'name': name,
-        'category': category,
-        'proficiency': proficiency,
-        'description': description,
-    }
-
-
-def create_app(data_file: Optional[Path] = None) -> Flask:
-    app = Flask(__name__, static_folder='static', static_url_path='/static')
-    app.config['DATA_FILE'] = Path(data_file) if data_file else DEFAULT_DATA_FILE
-
-    @app.get('/')
-    def index():
-        return send_from_directory(app.static_folder, 'index.html')
-
-    @app.get('/api/skills')
-    def list_skills():
-        skills = _load_skills(app.config['DATA_FILE'])
-        return jsonify({'skills': skills})
-
-    @app.post('/api/skills')
-    def create_skill():
-        skills = _load_skills(app.config['DATA_FILE'])
-        payload = validate_skill_payload(request.get_json(silent=True))
-        now = _utcnow()
-        skill = {
-            'id': str(uuid.uuid4()),
-            **payload,
-            'created_at': now,
-            'updated_at': now,
-        }
-        skills.append(skill)
-        _save_skills(skills, app.config['DATA_FILE'])
-        return jsonify(skill), 201
-
-    @app.get('/api/skills/<skill_id>')
-    def get_skill(skill_id: str):
-        skills = _load_skills(app.config['DATA_FILE'])
-        skill = _find_skill(skills, skill_id)
-        if skill is None:
-            raise NotFound('Skill not found.')
-        return jsonify(skill)
-
-    @app.put('/api/skills/<skill_id>')
-    def update_skill(skill_id: str):
-        skills = _load_skills(app.config['DATA_FILE'])
-        index = _find_skill_index(skills, skill_id)
-        if index is None:
-            raise NotFound('Skill not found.')
-        payload = validate_skill_payload(request.get_json(silent=True))
-        skill = {**skills[index], **payload, 'updated_at': _utcnow()}
-        skills[index] = skill
-        _save_skills(skills, app.config['DATA_FILE'])
-        return jsonify(skill)
-
-    @app.delete('/api/skills/<skill_id>')
-    def delete_skill(skill_id: str):
-        skills = _load_skills(app.config['DATA_FILE'])
-        index = _find_skill_index(skills, skill_id)
-        if index is None:
-            raise NotFound('Skill not found.')
-        del skills[index]
-        _save_skills(skills, app.config['DATA_FILE'])
-        return jsonify({'deleted': True, 'id': skill_id})
-
-    @app.errorhandler(BadRequest)
-    def handle_bad_request(error: BadRequest):
-        return jsonify({'error': error.description}), 400
-
-    @app.errorhandler(NotFound)
-    def handle_not_found(error: NotFound):
-        return jsonify({'error': error.description}), 404
-
-    return app
-
-
-app = create_app()
-
+@app.route('/attachments')
+def list_attachments():
+    attachments = Attachment.query.order_by(Attachment.uploaded_at.desc()).all()
+    return jsonify([{
+        'id': a.id,
+        'original_filename': a.original_filename,
+        'file_size': a.file_size,
+        'content_type': a.content_type,
+        'uploaded_at': a.uploaded_at.isoformat(),
+        'url': url_for('uploaded_file', filename=a.stored_filename)
+    } for a in attachments])
 
 if __name__ == '__main__':
     app.run(debug=True)

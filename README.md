@@ -1,28 +1,44 @@
-# Chat Application
+# Attachment Handling App
 
-This is a simple chat application core that provides:
-- **Message**: A data class representing a single message.
-- **ChatHistory**: Manages conversation history (add, get, clear, last message).
-- **ChatService**: High-level service to send messages and retrieve history.
+This is a simple web application for uploading and managing file attachments. It is built with Flask and SQLAlchemy.
 
-## Usage
+## Features
 
-```python
-from chat_core import ChatService
+- Upload files (allowed types: png, jpg, jpeg, gif, pdf, txt, zip, docx)
+- View list of uploaded attachments
+- Download files via direct link
+- JSON endpoint for attachment metadata
+- File type validation
+- Size limit (16 MB)
 
-service = ChatService()
-service.send_message("Hello, world!")
-history = service.get_conversation_history()
-print(history)
+## Installation
+
+1. Clone the repository.
+2. Create a virtual environment: `python -m venv venv`
+3. Activate it: `source venv/bin/activate` (Linux/Mac) or `venv\Scripts\activate` (Windows)
+4. Install dependencies: `pip install -r requirements.txt`
+
+## Running
+
+```bash
+python app.py
 ```
 
-## Tests
+Then open http://127.0.0.1:5000 in your browser.
+
+## Testing
 
 Run tests with:
+
 ```bash
-pytest tests/test_chat_core.py -v
+pytest tests/
 ```
 
-## Files
-- `chat_core.py` - Core implementation
-- `tests/test_chat_core.py` - Unit tests
+## Project Structure
+
+- `app.py` - Main Flask application
+- `models.py` - Database model for attachments
+- `templates/upload.html` - HTML template for upload/list UI
+- `tests/test_attachments.py` - Unit tests
+- `uploads/` - Directory where uploaded files are stored (created automatically)
+- `requirements.txt` - Python dependencies
