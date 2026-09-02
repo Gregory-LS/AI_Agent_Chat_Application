@@ -29,7 +29,7 @@ The `data/` directory (config, conversations, skills, attachments) is created au
 | Variable | Default | Description |
 |---|---|---|
 | `OPENROUTER_API_KEY` | — | Your OpenRouter API key (required) |
-| `HOST` | `0.0.0.0` | Server bind address |
+| `HOST` | `[IP_ADDRESS]` | Server bind address |
 | `PORT` | `8000` | Server port |
 
 The API key can also be set via the Settings UI (persisted to `data/config.json`).
@@ -47,7 +47,7 @@ The API key can also be set via the Settings UI (persisted to `data/config.json`
 │   ├── config.json        # API key, default model
 │   ├── conversations/     # Per-conversation JSON files
 │   ├── skills.json        # Custom skills
-│   └── attachments/       # Uploaded images
+│   └── attachments/       # Uploaded images and text files
 ├── tests/
 │   ├── test_app.html
 │   ├── test_app.js
@@ -70,10 +70,32 @@ The API key can also be set via the Settings UI (persisted to `data/config.json`
 | GET | `/api/conversations/:id/export?format=json|markdown` | Export |
 | GET/POST | `/api/skills` | List/create skills |
 | PATCH/DELETE | `/api/skills/:id` | Update/delete skill |
-| POST | `/api/attachments` | Upload an attachment |
+| POST | `/api/attachments` | Upload an attachment (multipart/form-data with 'file' field) |
+| GET | `/api/attachments/:id/download` | Download an attachment |
 | POST | `/api/chat` | Stream a chat response (SSE) — see below |
 
 The `/api/chat` endpoint returns a Server-Sent Events (SSE) stream. Each event has type `chunk` (partial content), `done` (final), `error` (failure), or `usage` (token usage).
+
+### Attachment upload
+
+Upload a file via POST to `/api/attachments` with `Content-Type: multipart/form-data` and a `file` field. Allowed types:
+
+- Images: PNG, JPEG, GIF, WebP
+- Text/Code: plain text, CSV, HTML, JSON, JavaScript, XML, Markdown, Python, Java, C, C++, Ruby, PHP, Go, Rust, TypeScript, shell scripts, YAML, TOML, PDF
+
+Maximum file size: 10 MB.
+
+Response (201 Created):
+```json
+{
+  "id": "uuid",
+  "filename": "original_name.txt",
+  "type": "text",
+  "mime_type": "text/plain",
+  "size": 1234,
+  "url": "/api/attachments/uuid/download"
+}
+```
 
 ## Requirements
 
