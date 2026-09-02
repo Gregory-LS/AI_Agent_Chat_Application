@@ -11,6 +11,7 @@ A Claude-style chat application powered by OpenRouter. Chat with hundreds of mod
 - **Conversations** — sidebar with search, rename, delete, auto-title from first message
 - **Attachments** — upload images (sent to vision-capable models), text/code files (inlined as context)
 - **Settings** — API key management, default model, dark/light theme
+- **Logout** — clear stored API key via the settings UI
 - **Export/Import** — download conversations as JSON or Markdown, restore from backup
 
 ## Quick start
@@ -73,6 +74,7 @@ The API key can also be set via the Settings UI (persisted to `data/config.json`
 | PATCH/DELETE | `/api/skills/:id` | Update/delete skill |
 | POST | `/api/attachments` | Upload an attachment |
 | POST | `/api/chat` | Stream a chat response (SSE) — see below |
+| **POST** | **`/api/logout`** | **Clear the stored API key (logout)** |
 
 The `/api/chat` endpoint returns a Server-Sent Events (SSE) stream. Each event has type `chunk` (partial content), `done` (final), `error` (failure), or `usage` (token usage). The frontend `streamFetch` function in `app.js` processes these events, updating the UI incrementally as chunks arrive, and supports cancellation via an `AbortController`.
 
