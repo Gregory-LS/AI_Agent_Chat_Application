@@ -43,15 +43,15 @@ The API key can also be set via the Settings UI (persisted to `data/config.json`
 ├── static/
 │   ├── index.html         # Single-page app markup
 │   ├── styles.css         # Dark/light theme CSS
-│   └── app.js             # Frontend JavaScript
+│   └── app.js             # Frontend JavaScript with state management
 ├── data/
 │   ├── config.json        # API key, default model
 │   ├── conversations/     # Per-conversation JSON files
 │   ├── skills.json        # Custom skills
 │   └── attachments/       # Uploaded images
 ├── tests/
-│   ├── test_app.html
-│   ├── test_app.js
+│   ├── test_app.html      # Test runner for app.js
+│   ├── test_app.js        # Unit tests for app.js state management
 │   ├── test_openrouter.py # OpenRouter API unit tests
 │   ├── test_styles.py
 │   └── test_server.py     # Backend unit tests
@@ -93,6 +93,8 @@ python -m pytest tests/
 ```
 
 (Requires `pytest` installed.)
+
+For frontend tests, open `tests/test_app.html` in a browser.
 
 ## Styling
 
