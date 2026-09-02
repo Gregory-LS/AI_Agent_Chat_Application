@@ -1,397 +1,342 @@
-// app.js — Agentic Chat frontend
+// app.js — frontend state management and streaming fetch
 
-// ===== State =====
 const state = {
-  conversations: [],
-  currentConversationId: null,
-  messages: [],
-  models: [],
-  skills: [],
-  config: {},
-  theme: 'light',
-  abortController: null,
-  streaming: false
+    conversations: [],
+    currentConversationId: null,
+    messages: [],
+    models: [],
+    skills: [],
+    config: {},
+    streaming: false,
+    abortController: null,
+    theme: localStorage.getItem('theme') || 'light'
 };
 
-// ===== DOM refs =====
-const $ = (id) => document.getElementById(id);
-const conversationList = $('conversation-list');
-const messagesEl = $('messages');
-const messageInput = $('message-input');
-const sendBtn = $('send-btn');
-const newChatBtn = $('new-chat-btn');
-const searchInput = $('search-input');
-const settingsBtn = $('settings-btn');
-const skillsBtn = $('skills-btn');
-const settingsDrawer = $('settings-drawer');
-const skillsDrawer = $('skills-drawer');
-const modelPickerModal = $('model-picker-modal');
-const apiKeyInput = $('api-key-input');
-const defaultModelSelect = $('default-model-select');
-const balanceDisplay = $('balance-display');
-const modelBadge = $('model-badge');
-const modelPickerBtn = $('model-picker-btn');
-const stopBtn = $('stop-btn');
-const copyBtn = $('copy-btn');
-const themeToggleBtn = $('theme-toggle-btn');
-const skillsList = $('skills-list');
-const addSkillBtn = $('add-skill-btn');
-const modelSearchInput = $('model-search-input');
-const modelList = $('model-list');
-const closeSettingsBtn = $('close-settings-btn');
-const closeSkillsBtn = $('close-skills-btn');
-const closeModelPickerBtn = $('close-model-picker-btn');
-const attachBtn = $('attach-btn');
+// DOM references (populated on DOMContentLoaded)
+let els = {};
 
-// ===== Theme management =====
+function init() {
+    els = {
+        sidebar: document.getElementById('sidebar'),
+        chatArea: document.getElementById('chat-area'),
+        composer: document.getElementById('composer'),
+        modelPicker: document.getElementById('model-picker'),
+        settingsDrawer: document.getElementById('settings-drawer'),
+        skillsDrawer: document.getElementById('skills-drawer'),
+        newChatBtn: document.getElementById('new-chat-btn'),
+        settingsBtn: document.getElementById('settings-btn'),
+        skillsBtn: document.getElementById('skills-btn'),
+        closeSettingsBtn: document.getElementById('close-settings-btn'),
+        closeSkillsBtn: document.getElementById('close-skills-btn'),
+        themeToggle: document.getElementById('theme-toggle'),
+        apiKeyInput: document.getElementById('api-key-input'),
+        defaultModelSelect: document.getElementById('default-model-select'),
+        balanceInfo: document.getElementById('balance-info'),
+        conversationList: document.getElementById('conversation-list'),
+        messageContainer: document.getElementById('message-container'),
+        sendBtn: document.getElementById('send-btn'),
+        stopBtn: document.getElementById('stop-btn'),
+        logoutBtn: document.getElementById('logout-btn'),
+        searchInput: document.getElementById('search-input')
+    };
+
+    applyTheme(state.theme);
+    loadConfig();
+    loadConversations();
+    loadModels();
+    loadSkills();
+    bindEvents();
+}
+
 function applyTheme(theme) {
-  document.documentElement.setAttribute('data-theme', theme);
-  localStorage.setItem('theme', theme);
-  state.theme = theme;
+    document.documentElement.setAttribute('data-theme', theme);
+    localStorage.setItem('theme', theme);
+    state.theme = theme;
 }
 
 function toggleTheme() {
-  const newTheme = state.theme === 'light' ? 'dark' : 'light';
-  applyTheme(newTheme);
+    const newTheme = state.theme === 'light' ? 'dark' : 'light';
+    applyTheme(newTheme);
 }
 
-function loadTheme() {
-  const saved = localStorage.getItem('theme');
-  const theme = saved || 'light';
-  applyTheme(theme);
-}
-
-// ===== API helpers =====
-
-async function api(url, options = {}) {
-  const headers = { 'Content-Type': 'application/json', ...options.headers };
-  const res = await fetch(url, { ...options, headers });
-  if (!res.ok) {
-    const err = await res.text();
-    throw new Error(`API error ${res.status}: ${err}`);
-  }
-  return res.json();
+async function apiFetch(url, options = {}) {
+    const response = await fetch(url, options);
+    if (!response.ok) {
+        const err = await response.json().catch(() => ({error: response.statusText}));
+        throw new Error(err.error || 'API error');
+    }
+    return response.json();
 }
 
 async function loadConfig() {
-  state.config = await api('/api/config');
-  if (state.config.apiKey) apiKeyInput.value = state.config.apiKey;
-  if (state.config.defaultModel) defaultModelSelect.value = state.config.defaultModel;
+    try {
+        state.config = await apiFetch('/api/config');
+        if (els.apiKeyInput) els.apiKeyInput.value = state.config.api_key || '';
+        if (els.defaultModelSelect) els.defaultModelSelect.value = state.config.default_model || '';
+    } catch (e) {
+        console.error('Failed to load config:', e);
+    }
 }
 
-async function saveConfig() {
-  state.config.apiKey = apiKeyInput.value;
-  state.config.defaultModel = defaultModelSelect.value;
-  await fetch('/api/config', {
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(state.config)
-  });
-}
-
-async function loadModels() {
-  state.models = await api('/api/models');
-  populateModelSelect();
-  populateModelList();
-}
-
-function populateModelSelect() {
-  defaultModelSelect.innerHTML = '';
-  state.models.forEach(m => {
-    const opt = document.createElement('option');
-    opt.value = m.id;
-    opt.textContent = m.name || m.id;
-    if (m.id === state.config.defaultModel) opt.selected = true;
-    defaultModelSelect.appendChild(opt);
-  });
-}
-
-function populateModelList(filter = '') {
-  modelList.innerHTML = '';
-  const filtered = state.models.filter(m =>
-    !filter || m.id.toLowerCase().includes(filter.toLowerCase()) || (m.name && m.name.toLowerCase().includes(filter.toLowerCase()))
-  );
-  filtered.forEach(m => {
-    const card = document.createElement('div');
-    card.className = 'model-card';
-    card.innerHTML = `<strong>${m.name || m.id}</strong><br><small>${m.id}</small>`;
-    card.addEventListener('click', () => selectModel(m.id));
-    modelList.appendChild(card);
-  });
-}
-
-function selectModel(modelId) {
-  state.config.defaultModel = modelId;
-  defaultModelSelect.value = modelId;
-  modelBadge.textContent = modelId;
-  saveConfig();
-  closeModelPicker();
-}
-
-async function loadBalance() {
-  try {
-    const data = await api('/api/balance');
-    balanceDisplay.textContent = `Credits: ${data.credits}, Usage: ${data.usage}, Total: ${data.total}`;
-  } catch (e) {
-    balanceDisplay.textContent = 'Failed to load balance';
-  }
+async function saveConfig(updates) {
+    try {
+        state.config = await apiFetch('/api/config', {
+            method: 'PUT',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(updates)
+        });
+    } catch (e) {
+        console.error('Failed to save config:', e);
+    }
 }
 
 async function loadConversations() {
-  state.conversations = await api('/api/conversations');
-  renderConversationList();
+    try {
+        state.conversations = await apiFetch('/api/conversations');
+        renderConversationList();
+    } catch (e) {
+        console.error('Failed to load conversations:', e);
+    }
+}
+
+async function loadModels() {
+    try {
+        state.models = await apiFetch('/api/models');
+        populateModelPicker();
+    } catch (e) {
+        console.error('Failed to load models:', e);
+    }
+}
+
+async function loadSkills() {
+    try {
+        state.skills = await apiFetch('/api/skills');
+        renderSkills();
+    } catch (e) {
+        console.error('Failed to load skills:', e);
+    }
+}
+
+function populateModelPicker() {
+    const select = els.defaultModelSelect;
+    if (!select) return;
+    select.innerHTML = '<option value="">Default model</option>';
+    state.models.forEach(m => {
+        const opt = document.createElement('option');
+        opt.value = m.id;
+        opt.textContent = m.name || m.id;
+        select.appendChild(opt);
+    });
+    if (state.config.default_model) {
+        select.value = state.config.default_model;
+    }
 }
 
 function renderConversationList() {
-  const search = searchInput.value.toLowerCase();
-  conversationList.innerHTML = '';
-  state.conversations
-    .filter(c => !search || c.title.toLowerCase().includes(search))
-    .forEach(c => {
-      const item = document.createElement('div');
-      item.className = 'conversation-item' + (c.id === state.currentConversationId ? ' active' : '');
-      item.textContent = c.title || 'Untitled';
-      item.addEventListener('click', () => openConversation(c.id));
-      conversationList.appendChild(item);
-    });
-}
-
-async function openConversation(id) {
-  state.currentConversationId = id;
-  const conv = await api(`/api/conversations/${id}`);
-  state.messages = conv.messages || [];
-  renderMessages();
-  renderConversationList();
-}
-
-async function newConversation() {
-  const conv = await api('/api/conversations', {
-    method: 'POST',
-    body: JSON.stringify({ title: 'New conversation', messages: [] })
-  });
-  state.currentConversationId = conv.id;
-  state.messages = [];
-  renderMessages();
-  await loadConversations();
-}
-
-function renderMessages() {
-  messagesEl.innerHTML = '';
-  state.messages.forEach(msg => {
-    const div = document.createElement('div');
-    div.className = `message message-${msg.role}`;
-    div.textContent = msg.content;
-    messagesEl.appendChild(div);
-  });
-  messagesEl.scrollTop = messagesEl.scrollHeight;
-}
-
-// ===== Streaming chat =====
-
-async function sendMessage() {
-  const text = messageInput.value.trim();
-  if (!text) return;
-  if (!state.currentConversationId) await newConversation();
-
-  // Add user message
-  state.messages.push({ role: 'user', content: text });
-  renderMessages();
-  messageInput.value = '';
-
-  // Start streaming
-  state.abortController = new AbortController();
-  state.streaming = true;
-  stopBtn.style.display = 'inline-block';
-
-  const assistantMsg = { role: 'assistant', content: '' };
-  state.messages.push(assistantMsg);
-
-  try {
-    const response = await fetch('/api/chat', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        conversationId: state.currentConversationId,
-        message: text
-      }),
-      signal: state.abortController.signal
-    });
-
-    const reader = response.body.getReader();
-    const decoder = new TextDecoder();
-    let buffer = '';
-
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      buffer += decoder.decode(value, { stream: true });
-      const lines = buffer.split('\n');
-      buffer = lines.pop(); // keep incomplete line
-      for (const line of lines) {
-        if (line.startsWith('data: ')) {
-          const data = line.slice(6);
-          if (data === '[DONE]') continue;
-          try {
-            const parsed = JSON.parse(data);
-            if (parsed.type === 'chunk') {
-              assistantMsg.content += parsed.content;
-              renderMessages();
-            } else if (parsed.type === 'usage') {
-              console.log('Token usage:', parsed);
-            } else if (parsed.type === 'error') {
-              console.error('Stream error:', parsed.content);
-            }
-          } catch (e) {
-            // ignore parse errors
-          }
+    const list = els.conversationList;
+    if (!list) return;
+    list.innerHTML = '';
+    state.conversations.forEach(conv => {
+        const item = document.createElement('div');
+        item.className = 'conversation-item';
+        item.dataset.id = conv.id;
+        item.textContent = conv.title || 'Untitled';
+        item.addEventListener('click', () => selectConversation(conv.id));
+        if (conv.id === state.currentConversationId) {
+            item.classList.add('active');
         }
-      }
-    }
-  } catch (e) {
-    if (e.name !== 'AbortError') {
-      console.error('Stream error:', e);
-    }
-  } finally {
-    state.streaming = false;
-    stopBtn.style.display = 'none';
-    state.abortController = null;
-    renderMessages();
-  }
-}
-
-function stopStreaming() {
-  if (state.abortController) {
-    state.abortController.abort();
-  }
-}
-
-// ===== Skills =====
-
-async function loadSkills() {
-  state.skills = await api('/api/skills');
-  renderSkills();
+        list.appendChild(item);
+    });
 }
 
 function renderSkills() {
-  skillsList.innerHTML = '';
-  state.skills.forEach(skill => {
-    const div = document.createElement('div');
-    div.className = 'skill-item';
-    div.innerHTML = `<label><input type="checkbox" ${skill.enabled ? 'checked' : ''}> ${skill.name}</label>`;
-    skillsList.appendChild(div);
-  });
+    // Skills rendering logic placeholder
 }
 
-// ===== Drawer/Modal controls =====
-
-function openSettings() {
-  settingsDrawer.style.display = 'block';
-  loadBalance();
-}
-
-function closeSettings() {
-  settingsDrawer.style.display = 'none';
-  saveConfig();
-}
-
-function openSkills() {
-  skillsDrawer.style.display = 'block';
-  loadSkills();
-}
-
-function closeSkills() {
-  skillsDrawer.style.display = 'none';
-}
-
-function openModelPicker() {
-  modelPickerModal.style.display = 'block';
-  modelSearchInput.value = '';
-  populateModelList();
-}
-
-function closeModelPicker() {
-  modelPickerModal.style.display = 'none';
-}
-
-// ===== Copy last message =====
-
-function copyLastMessage() {
-  const last = state.messages[state.messages.length - 1];
-  if (last && last.content) {
-    navigator.clipboard.writeText(last.content);
-  }
-}
-
-// ===== Attachments =====
-
-attachBtn.addEventListener('click', () => {
-  const input = document.createElement('input');
-  input.type = 'file';
-  input.accept = 'image/*,.txt,.js,.py,.html,.css,.json,.md';
-  input.addEventListener('change', async (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
-    const formData = new FormData();
-    formData.append('file', file);
+async function selectConversation(id) {
+    state.currentConversationId = id;
     try {
-      const result = await fetch('/api/attachments', {
-        method: 'POST',
-        body: formData
-      });
-      const data = await result.json();
-      console.log('Attachment uploaded:', data);
-    } catch (err) {
-      console.error('Upload failed:', err);
+        const conv = await apiFetch(`/api/conversations/${id}`);
+        state.messages = conv.messages || [];
+        renderMessages();
+        renderConversationList();
+    } catch (e) {
+        console.error('Failed to load conversation:', e);
     }
-  });
-  input.click();
-});
-
-// ===== Event listeners =====
-
-sendBtn.addEventListener('click', sendMessage);
-messageInput.addEventListener('keydown', (e) => {
-  if (e.key === 'Enter' && !e.shiftKey) {
-    e.preventDefault();
-    sendMessage();
-  }
-});
-newChatBtn.addEventListener('click', newConversation);
-searchInput.addEventListener('input', renderConversationList);
-settingsBtn.addEventListener('click', openSettings);
-skillsBtn.addEventListener('click', openSkills);
-closeSettingsBtn.addEventListener('click', closeSettings);
-closeSkillsBtn.addEventListener('click', closeSkills);
-modelPickerBtn.addEventListener('click', openModelPicker);
-closeModelPickerBtn.addEventListener('click', closeModelPicker);
-stopBtn.addEventListener('click', stopStreaming);
-copyBtn.addEventListener('click', copyLastMessage);
-themeToggleBtn.addEventListener('click', toggleTheme);
-modelSearchInput.addEventListener('input', (e) => populateModelList(e.target.value));
-
-apiKeyInput.addEventListener('change', saveConfig);
-defaultModelSelect.addEventListener('change', saveConfig);
-
-addSkillBtn.addEventListener('click', async () => {
-  const name = prompt('Skill name:');
-  if (!name) return;
-  await api('/api/skills', {
-    method: 'POST',
-    body: JSON.stringify({ name, prompt: '', enabled: true })
-  });
-  loadSkills();
-});
-
-// ===== Init =====
-
-async function init() {
-  loadTheme();
-  await loadConfig();
-  await loadModels();
-  await loadConversations();
-  if (state.conversations.length > 0) {
-    await openConversation(state.conversations[0].id);
-  }
 }
 
-init();
+async function newConversation() {
+    state.currentConversationId = null;
+    state.messages = [];
+    renderMessages();
+    renderConversationList();
+}
+
+function renderMessages() {
+    const container = els.messageContainer;
+    if (!container) return;
+    container.innerHTML = '';
+    state.messages.forEach(msg => {
+        const div = document.createElement('div');
+        div.className = `message message-${msg.role}`;
+        div.textContent = msg.content;
+        container.appendChild(div);
+    });
+    container.scrollTop = container.scrollHeight;
+}
+
+async function sendMessage() {
+    const input = els.composer;
+    if (!input || !input.value.trim()) return;
+    const content = input.value.trim();
+    input.value = '';
+
+    const userMsg = { role: 'user', content };
+    state.messages.push(userMsg);
+    renderMessages();
+
+    const model = els.defaultModelSelect ? els.defaultModelSelect.value : '';
+    const payload = {
+        messages: state.messages,
+        model: model || undefined,
+        stream: true
+    };
+
+    state.abortController = new AbortController();
+    state.streaming = true;
+    if (els.stopBtn) els.stopBtn.style.display = 'inline-block';
+    if (els.sendBtn) els.sendBtn.style.display = 'none';
+
+    try {
+        const response = await fetch('/api/chat', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(payload),
+            signal: state.abortController.signal
+        });
+
+        if (!response.ok) {
+            const err = await response.json().catch(() => ({error: response.statusText}));
+            throw new Error(err.error || 'Chat API error');
+        }
+
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+        let assistantMsg = { role: 'assistant', content: '' };
+        state.messages.push(assistantMsg);
+
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            buffer += decoder.decode(value, { stream: true });
+            const lines = buffer.split('\n');
+            buffer = lines.pop() || '';
+            for (const line of lines) {
+                if (line.startsWith('data: ')) {
+                    try {
+                        const data = JSON.parse(line.slice(6));
+                        if (data.type === 'chunk') {
+                            assistantMsg.content += data.content || '';
+                            renderMessages();
+                        } else if (data.type === 'done') {
+                            // final
+                        } else if (data.type === 'error') {
+                            throw new Error(data.content);
+                        } else if (data.type === 'usage') {
+                            // token usage info
+                        }
+                    } catch (e) {
+                        if (e.message !== 'Chat API error') console.error('SSE parse error:', e);
+                    }
+                }
+            }
+        }
+        renderMessages();
+    } catch (e) {
+        if (e.name === 'AbortError') {
+            // user cancelled
+        } else {
+            console.error('Chat error:', e);
+        }
+    } finally {
+        state.streaming = false;
+        state.abortController = null;
+        if (els.stopBtn) els.stopBtn.style.display = 'none';
+        if (els.sendBtn) els.sendBtn.style.display = 'inline-block';
+    }
+}
+
+function stopStreaming() {
+    if (state.abortController) {
+        state.abortController.abort();
+    }
+}
+
+async function checkBalance() {
+    try {
+        const data = await apiFetch('/api/balance');
+        if (els.balanceInfo) {
+            els.balanceInfo.textContent = `Credits: ${data.credits}, Usage: ${data.usage}, Total: ${data.total}`;
+        }
+    } catch (e) {
+        console.error('Balance check failed:', e);
+    }
+}
+
+async function handleLogout() {
+    try {
+        await fetch('/api/logout', { method: 'POST' });
+        // Reload page to reset all state
+        window.location.reload();
+    } catch (e) {
+        console.error('Logout failed:', e);
+    }
+}
+
+function bindEvents() {
+    if (els.newChatBtn) els.newChatBtn.addEventListener('click', newConversation);
+    if (els.settingsBtn) els.settingsBtn.addEventListener('click', () => {
+        if (els.settingsDrawer) els.settingsDrawer.classList.toggle('open');
+        checkBalance();
+    });
+    if (els.closeSettingsBtn) els.closeSettingsBtn.addEventListener('click', () => {
+        if (els.settingsDrawer) els.settingsDrawer.classList.remove('open');
+    });
+    if (els.skillsBtn) els.skillsBtn.addEventListener('click', () => {
+        if (els.skillsDrawer) els.skillsDrawer.classList.toggle('open');
+    });
+    if (els.closeSkillsBtn) els.closeSkillsBtn.addEventListener('click', () => {
+        if (els.skillsDrawer) els.skillsDrawer.classList.remove('open');
+    });
+    if (els.themeToggle) els.themeToggle.addEventListener('click', toggleTheme);
+    if (els.apiKeyInput) els.apiKeyInput.addEventListener('change', () => {
+        saveConfig({ api_key: els.apiKeyInput.value });
+    });
+    if (els.defaultModelSelect) els.defaultModelSelect.addEventListener('change', () => {
+        saveConfig({ default_model: els.defaultModelSelect.value });
+    });
+    if (els.sendBtn) els.sendBtn.addEventListener('click', sendMessage);
+    if (els.composer) els.composer.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' && !e.shiftKey) {
+            e.preventDefault();
+            sendMessage();
+        }
+    });
+    if (els.stopBtn) els.stopBtn.addEventListener('click', stopStreaming);
+    if (els.logoutBtn) els.logoutBtn.addEventListener('click', handleLogout);
+    if (els.searchInput) els.searchInput.addEventListener('input', (e) => {
+        filterConversations(e.target.value);
+    });
+}
+
+function filterConversations(query) {
+    const items = document.querySelectorAll('.conversation-item');
+    const lower = query.toLowerCase();
+    items.forEach(item => {
+        const match = item.textContent.toLowerCase().includes(lower);
+        item.style.display = match ? 'block' : 'none';
+    });
+}
+
+document.addEventListener('DOMContentLoaded', init);
