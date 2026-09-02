@@ -1,0 +1,110 @@
+.model-picker {
+  position: relative;
+  display: inline-block;
+  font-family: system-ui, -apple-system, sans-serif;
+  color: #1f2933;
+}
+
+.model-picker__trigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  min-width: 14rem;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid #cbd2d9;
+  border-radius: 0.375rem;
+  background-color: #ffffff;
+  font: inherit;
+  cursor: pointer;
+}
+
+.model-picker__trigger:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.model-picker__caret {
+  transition: transform 120ms ease;
+}
+
+.model-picker__trigger[aria-expanded='true'] .model-picker__caret {
+  transform: rotate(180deg);
+}
+
+.model-picker__dropdown {
+  position: absolute;
+  z-index: 10;
+  top: calc(100% + 0.25rem);
+  left: 0;
+  width: 18rem;
+  max-width: 90vw;
+  border: 1px solid #cbd2d9;
+  border-radius: 0.375rem;
+  background-color: #ffffff;
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.12);
+  padding: 0.25rem;
+}
+
+.model-picker__search {
+  box-sizing: border-box;
+  width: 100%;
+  padding: 0.5rem;
+  border: 1px solid #cbd2d9;
+  border-radius: 0.25rem;
+  margin-bottom: 0.25rem;
+  font: inherit;
+}
+
+.model-picker__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 16rem;
+  overflow-y: auto;
+}
+
+.model-picker__option {
+  padding: 0.5rem 0.625rem;
+  border-radius: 0.25rem;
+  cursor: pointer;
+}
+
+.model-picker__option--active,
+.model-picker__option:hover {
+  background-color: #e6f6ff;
+}
+
+.model-picker__option-name {
+  font-weight: 500;
+}
+
+.model-picker__option-description {
+  margin-top: 0.125rem;
+  font-size: 0.8125rem;
+  color: #52606d;
+}
+
+.model-picker__message {
+  padding: 0.5rem 0.625rem;
+  color: #52606d;
+  font-size: 0.875rem;
+}
+
+.model-picker__error {
+  color: #b91c1c;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.model-picker__error button {
+  border: 1px solid #f1a15e;
+  border-radius: 0.25rem;
+  background-color: transparent;
+  padding: 0.25rem 0.5rem;
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+}
