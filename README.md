@@ -43,7 +43,7 @@ The API key can also be set via the Settings UI (persisted to `data/config.json`
 ├── static/
 │   ├── index.html         # Single-page app markup
 │   ├── styles.css         # Dark/light theme CSS
-│   └── app.js             # Frontend JavaScript with state management
+│   └── app.js             # Frontend JavaScript with state management and streaming fetch
 ├── data/
 │   ├── config.json        # API key, default model
 │   ├── conversations/     # Per-conversation JSON files
@@ -51,7 +51,7 @@ The API key can also be set via the Settings UI (persisted to `data/config.json`
 │   └── attachments/       # Uploaded images
 ├── tests/
 │   ├── test_app.html      # Test runner for app.js
-│   ├── test_app.js        # Unit tests for app.js state management
+│   ├── test_app.js        # Unit tests for app.js state management and streaming
 │   ├── test_openrouter.py # OpenRouter API unit tests
 │   ├── test_styles.py
 │   └── test_server.py     # Backend unit tests
@@ -74,7 +74,7 @@ The API key can also be set via the Settings UI (persisted to `data/config.json`
 | POST | `/api/attachments` | Upload an attachment |
 | POST | `/api/chat` | Stream a chat response (SSE) — see below |
 
-The `/api/chat` endpoint returns a Server-Sent Events (SSE) stream. Each event has type `chunk` (partial content), `done` (final), `error` (failure), or `usage` (token usage).
+The `/api/chat` endpoint returns a Server-Sent Events (SSE) stream. Each event has type `chunk` (partial content), `done` (final), `error` (failure), or `usage` (token usage). The frontend `streamFetch` function in `app.js` processes these events, updating the UI incrementally as chunks arrive, and supports cancellation via an `AbortController`.
 
 The `/api/balance` endpoint returns a JSON object with `credits`, `usage`, and `total` fields representing the OpenRouter account balance.
 
@@ -94,7 +94,11 @@ python -m pytest tests/
 
 (Requires `pytest` installed.)
 
-For frontend tests, open `tests/test_app.html` in a browser.
+For frontend tests, open `tests/test_app.html` in a browser or run with Node.js:
+
+```bash
+node tests/test_app.js
+```
 
 ## Styling
 
