@@ -37,6 +37,7 @@ The API key can also be set via the Settings UI (persisted to `data/config.json`
 ## File layout
 
 ```
+├── openrouter.py           # OpenRouter API client (models, balance, chat)
 ├── server.py              # Python backend (stdlib + httpx)
 ├── static/
 │   ├── index.html         # Single-page app markup
@@ -50,6 +51,7 @@ The API key can also be set via the Settings UI (persisted to `data/config.json`
 ├── tests/
 │   ├── test_app.html
 │   ├── test_app.js
+│   ├── test_openrouter.py # OpenRouter API unit tests
 │   ├── test_styles.py
 │   └── test_server.py     # Backend unit tests
 └── README.md
