@@ -1,342 +1,681 @@
-// app.js — frontend state management and streaming fetch
+// app.js — Claude-style AI chat frontend
+// State management, streaming fetch, model picker, skills, conversation management, keyboard shortcuts
+
+import { state, setState, getState } from './state.js';
+
+// ============================================================
+// State management
+// ============================================================
 
 const state = {
+    apiKey: localStorage.getItem('openrouter_api_key') || '',
+    defaultModel: localStorage.getItem('default_model') || '',
     conversations: [],
     currentConversationId: null,
     messages: [],
-    models: [],
     skills: [],
-    config: {},
+    activeSkills: [],
+    models: [],
+    theme: localStorage.getItem('theme') || 'light',
     streaming: false,
     abortController: null,
-    theme: localStorage.getItem('theme') || 'light'
+    composerText: '',
+    composerAttachments: [],
+    isSettingsOpen: false,
+    isSkillsOpen: false,
+    isModelPickerOpen: false,
+    balance: null,
+    conversationSearchQuery: '',
+    modelSearchQuery: '',
+    selectedProvider: 'all',
+    showAllModels: false,
 };
 
-// DOM references (populated on DOMContentLoaded)
-let els = {};
-
-function init() {
-    els = {
-        sidebar: document.getElementById('sidebar'),
-        chatArea: document.getElementById('chat-area'),
-        composer: document.getElementById('composer'),
-        modelPicker: document.getElementById('model-picker'),
-        settingsDrawer: document.getElementById('settings-drawer'),
-        skillsDrawer: document.getElementById('skills-drawer'),
-        newChatBtn: document.getElementById('new-chat-btn'),
-        settingsBtn: document.getElementById('settings-btn'),
-        skillsBtn: document.getElementById('skills-btn'),
-        closeSettingsBtn: document.getElementById('close-settings-btn'),
-        closeSkillsBtn: document.getElementById('close-skills-btn'),
-        themeToggle: document.getElementById('theme-toggle'),
-        apiKeyInput: document.getElementById('api-key-input'),
-        defaultModelSelect: document.getElementById('default-model-select'),
-        balanceInfo: document.getElementById('balance-info'),
-        conversationList: document.getElementById('conversation-list'),
-        messageContainer: document.getElementById('message-container'),
-        sendBtn: document.getElementById('send-btn'),
-        stopBtn: document.getElementById('stop-btn'),
-        logoutBtn: document.getElementById('logout-btn'),
-        searchInput: document.getElementById('search-input')
-    };
-
-    applyTheme(state.theme);
-    loadConfig();
-    loadConversations();
-    loadModels();
-    loadSkills();
-    bindEvents();
+function setState(updates) {
+    Object.assign(state, updates);
+    render();
 }
 
-function applyTheme(theme) {
-    document.documentElement.setAttribute('data-theme', theme);
-    localStorage.setItem('theme', theme);
-    state.theme = theme;
+function getState() {
+    return state;
+}
+
+// ============================================================
+// Keyboard shortcuts (FIX #264)
+// ============================================================
+
+document.addEventListener('keydown', function(e) {
+    // Ignore if user is typing in an input/textarea (except for shortcuts that should work globally)
+    const tag = e.target.tagName.toLowerCase();
+    const isInput = tag === 'input' || tag === 'textarea' || tag === 'select' || e.target.isContentEditable;
+
+    // Ctrl+Shift+O — Focus composer (works even in inputs)
+    if (e.ctrlKey && e.shiftKey && e.key === 'O') {
+        e.preventDefault();
+        focusComposer();
+        return;
+    }
+
+    // Escape — Close modals/drawers or stop generation (works everywhere)
+    if (e.key === 'Escape') {
+        e.preventDefault();
+        if (state.streaming) {
+            stopGeneration();
+        } else if (state.isSettingsOpen) {
+            closeSettings();
+        } else if (state.isSkillsOpen) {
+            closeSkills();
+        } else if (state.isModelPickerOpen) {
+            closeModelPicker();
+        }
+        return;
+    }
+
+    // If inside an input, don't handle other shortcuts
+    if (isInput) return;
+
+    // Ctrl+Shift+N — New conversation
+    if (e.ctrlKey && e.shiftKey && e.key === 'N') {
+        e.preventDefault();
+        newConversation();
+        return;
+    }
+
+    // Ctrl+Shift+, — Open settings
+    if (e.ctrlKey && e.shiftKey && e.key === ',') {
+        e.preventDefault();
+        openSettings();
+        return;
+    }
+
+    // Ctrl+Shift+E — Open skills
+    if (e.ctrlKey && e.shiftKey && e.key === 'E') {
+        e.preventDefault();
+        openSkills();
+        return;
+    }
+
+    // Ctrl+Shift+Delete — Clear conversations
+    if (e.ctrlKey && e.shiftKey && e.key === 'Delete') {
+        e.preventDefault();
+        clearConversations();
+        return;
+    }
+
+    // Ctrl+Shift+ArrowUp — Previous conversation
+    if (e.ctrlKey && e.shiftKey && e.key === 'ArrowUp') {
+        e.preventDefault();
+        navigateConversation(-1);
+        return;
+    }
+
+    // Ctrl+Shift+ArrowDown — Next conversation
+    if (e.ctrlKey && e.shiftKey && e.key === 'ArrowDown') {
+        e.preventDefault();
+        navigateConversation(1);
+        return;
+    }
+
+    // Ctrl+Shift+S — Toggle theme
+    if (e.ctrlKey && e.shiftKey && e.key === 'S') {
+        e.preventDefault();
+        toggleTheme();
+        return;
+    }
+});
+
+function focusComposer() {
+    const composer = document.getElementById('composer');
+    if (composer) {
+        composer.focus();
+        // Move cursor to end
+        const len = composer.value.length;
+        composer.setSelectionRange(len, len);
+    }
+}
+
+function stopGeneration() {
+    if (state.abortController) {
+        state.abortController.abort();
+        setState({ streaming: false, abortController: null });
+    }
+}
+
+function closeSettings() {
+    setState({ isSettingsOpen: false });
+}
+
+function closeSkills() {
+    setState({ isSkillsOpen: false });
+}
+
+function closeModelPicker() {
+    setState({ isModelPickerOpen: false });
+}
+
+function newConversation() {
+    // Save current conversation if any
+    if (state.currentConversationId) {
+        saveConversation();
+    }
+    setState({
+        currentConversationId: null,
+        messages: [],
+        composerText: '',
+        composerAttachments: [],
+    });
+    focusComposer();
+}
+
+function openSettings() {
+    setState({ isSettingsOpen: true });
+    fetchBalance();
+}
+
+function openSkills() {
+    setState({ isSkillsOpen: true });
+    fetchSkills();
+}
+
+function clearConversations() {
+    if (confirm('Are you sure you want to delete all conversations? This cannot be undone.')) {
+        // Delete all conversations via API
+        const promises = state.conversations.map(conv =>
+            fetch(`/api/conversations/${conv.id}`, { method: 'DELETE' })
+        );
+        Promise.all(promises).then(() => {
+            setState({
+                conversations: [],
+                currentConversationId: null,
+                messages: [],
+            });
+        }).catch(err => console.error('Failed to clear conversations:', err));
+    }
+}
+
+function navigateConversation(direction) {
+    const convs = state.conversations;
+    if (convs.length === 0) return;
+    const currentIndex = convs.findIndex(c => c.id === state.currentConversationId);
+    let newIndex;
+    if (currentIndex === -1) {
+        newIndex = direction > 0 ? 0 : convs.length - 1;
+    } else {
+        newIndex = (currentIndex + direction + convs.length) % convs.length;
+    }
+    const conv = convs[newIndex];
+    if (conv) {
+        loadConversation(conv.id);
+    }
 }
 
 function toggleTheme() {
     const newTheme = state.theme === 'light' ? 'dark' : 'light';
-    applyTheme(newTheme);
+    localStorage.setItem('theme', newTheme);
+    document.documentElement.setAttribute('data-theme', newTheme);
+    setState({ theme: newTheme });
 }
 
-async function apiFetch(url, options = {}) {
-    const response = await fetch(url, options);
-    if (!response.ok) {
-        const err = await response.json().catch(() => ({error: response.statusText}));
-        throw new Error(err.error || 'API error');
-    }
-    return response.json();
-}
+// ============================================================
+// API helpers
+// ============================================================
 
-async function loadConfig() {
+async function fetchModels() {
     try {
-        state.config = await apiFetch('/api/config');
-        if (els.apiKeyInput) els.apiKeyInput.value = state.config.api_key || '';
-        if (els.defaultModelSelect) els.defaultModelSelect.value = state.config.default_model || '';
-    } catch (e) {
-        console.error('Failed to load config:', e);
+        const response = await fetch('/api/models');
+        const models = await response.json();
+        setState({ models });
+    } catch (err) {
+        console.error('Failed to fetch models:', err);
     }
 }
 
-async function saveConfig(updates) {
+async function fetchBalance() {
     try {
-        state.config = await apiFetch('/api/config', {
-            method: 'PUT',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify(updates)
+        const response = await fetch('/api/balance');
+        const balance = await response.json();
+        setState({ balance });
+    } catch (err) {
+        console.error('Failed to fetch balance:', err);
+    }
+}
+
+async function fetchConversations() {
+    try {
+        const response = await fetch('/api/conversations');
+        const conversations = await response.json();
+        setState({ conversations });
+    } catch (err) {
+        console.error('Failed to fetch conversations:', err);
+    }
+}
+
+async function fetchConversation(id) {
+    try {
+        const response = await fetch(`/api/conversations/${id}`);
+        const data = await response.json();
+        setState({ currentConversationId: id, messages: data.messages || [] });
+    } catch (err) {
+        console.error('Failed to fetch conversation:', err);
+    }
+}
+
+async function saveConversation() {
+    if (!state.currentConversationId || state.messages.length === 0) return;
+    try {
+        await fetch(`/api/conversations/${state.currentConversationId}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ messages: state.messages }),
         });
-    } catch (e) {
-        console.error('Failed to save config:', e);
+    } catch (err) {
+        console.error('Failed to save conversation:', err);
     }
 }
 
-async function loadConversations() {
+async function fetchSkills() {
     try {
-        state.conversations = await apiFetch('/api/conversations');
-        renderConversationList();
-    } catch (e) {
-        console.error('Failed to load conversations:', e);
+        const response = await fetch('/api/skills');
+        const skills = await response.json();
+        setState({ skills });
+    } catch (err) {
+        console.error('Failed to fetch skills:', err);
     }
 }
 
-async function loadModels() {
-    try {
-        state.models = await apiFetch('/api/models');
-        populateModelPicker();
-    } catch (e) {
-        console.error('Failed to load models:', e);
-    }
-}
-
-async function loadSkills() {
-    try {
-        state.skills = await apiFetch('/api/skills');
-        renderSkills();
-    } catch (e) {
-        console.error('Failed to load skills:', e);
-    }
-}
-
-function populateModelPicker() {
-    const select = els.defaultModelSelect;
-    if (!select) return;
-    select.innerHTML = '<option value="">Default model</option>';
-    state.models.forEach(m => {
-        const opt = document.createElement('option');
-        opt.value = m.id;
-        opt.textContent = m.name || m.id;
-        select.appendChild(opt);
-    });
-    if (state.config.default_model) {
-        select.value = state.config.default_model;
-    }
-}
-
-function renderConversationList() {
-    const list = els.conversationList;
-    if (!list) return;
-    list.innerHTML = '';
-    state.conversations.forEach(conv => {
-        const item = document.createElement('div');
-        item.className = 'conversation-item';
-        item.dataset.id = conv.id;
-        item.textContent = conv.title || 'Untitled';
-        item.addEventListener('click', () => selectConversation(conv.id));
-        if (conv.id === state.currentConversationId) {
-            item.classList.add('active');
-        }
-        list.appendChild(item);
-    });
-}
-
-function renderSkills() {
-    // Skills rendering logic placeholder
-}
-
-async function selectConversation(id) {
-    state.currentConversationId = id;
-    try {
-        const conv = await apiFetch(`/api/conversations/${id}`);
-        state.messages = conv.messages || [];
-        renderMessages();
-        renderConversationList();
-    } catch (e) {
-        console.error('Failed to load conversation:', e);
-    }
-}
-
-async function newConversation() {
-    state.currentConversationId = null;
-    state.messages = [];
-    renderMessages();
-    renderConversationList();
-}
-
-function renderMessages() {
-    const container = els.messageContainer;
-    if (!container) return;
-    container.innerHTML = '';
-    state.messages.forEach(msg => {
-        const div = document.createElement('div');
-        div.className = `message message-${msg.role}`;
-        div.textContent = msg.content;
-        container.appendChild(div);
-    });
-    container.scrollTop = container.scrollHeight;
-}
+// ============================================================
+// Chat streaming
+// ============================================================
 
 async function sendMessage() {
-    const input = els.composer;
-    if (!input || !input.value.trim()) return;
-    const content = input.value.trim();
-    input.value = '';
+    const text = state.composerText.trim();
+    if (!text && state.composerAttachments.length === 0) return;
 
-    const userMsg = { role: 'user', content };
-    state.messages.push(userMsg);
-    renderMessages();
-
-    const model = els.defaultModelSelect ? els.defaultModelSelect.value : '';
-    const payload = {
-        messages: state.messages,
-        model: model || undefined,
-        stream: true
+    // Build messages array
+    const userMessage = {
+        role: 'user',
+        content: text,
+        attachments: state.composerAttachments,
     };
 
-    state.abortController = new AbortController();
-    state.streaming = true;
-    if (els.stopBtn) els.stopBtn.style.display = 'inline-block';
-    if (els.sendBtn) els.sendBtn.style.display = 'none';
+    const messages = [...state.messages, userMessage];
+    setState({ messages, composerText: '', composerAttachments: [], streaming: true });
+
+    // Create conversation if needed
+    if (!state.currentConversationId) {
+        try {
+            const response = await fetch('/api/conversations', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ messages: [userMessage] }),
+            });
+            const conv = await response.json();
+            setState({ currentConversationId: conv.id });
+            fetchConversations();
+        } catch (err) {
+            console.error('Failed to create conversation:', err);
+            setState({ streaming: false });
+            return;
+        }
+    }
+
+    // Stream response
+    const abortController = new AbortController();
+    setState({ abortController });
 
     try {
         const response = await fetch('/api/chat', {
             method: 'POST',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify(payload),
-            signal: state.abortController.signal
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                model: state.defaultModel,
+                messages: messages,
+                skills: state.activeSkills,
+            }),
+            signal: abortController.signal,
         });
-
-        if (!response.ok) {
-            const err = await response.json().catch(() => ({error: response.statusText}));
-            throw new Error(err.error || 'Chat API error');
-        }
 
         const reader = response.body.getReader();
         const decoder = new TextDecoder();
         let buffer = '';
-        let assistantMsg = { role: 'assistant', content: '' };
-        state.messages.push(assistantMsg);
+        let assistantMessage = { role: 'assistant', content: '' };
 
         while (true) {
             const { done, value } = await reader.read();
             if (done) break;
+
             buffer += decoder.decode(value, { stream: true });
             const lines = buffer.split('\n');
-            buffer = lines.pop() || '';
+            buffer = lines.pop(); // Keep incomplete line in buffer
+
             for (const line of lines) {
                 if (line.startsWith('data: ')) {
+                    const data = line.slice(6);
                     try {
-                        const data = JSON.parse(line.slice(6));
-                        if (data.type === 'chunk') {
-                            assistantMsg.content += data.content || '';
-                            renderMessages();
-                        } else if (data.type === 'done') {
-                            // final
-                        } else if (data.type === 'error') {
-                            throw new Error(data.content);
-                        } else if (data.type === 'usage') {
-                            // token usage info
+                        const event = JSON.parse(data);
+                        if (event.type === 'chunk') {
+                            assistantMessage.content += event.content;
+                            // Update the last message in state
+                            const msgs = [...state.messages];
+                            if (msgs[msgs.length - 1]?.role === 'assistant') {
+                                msgs[msgs.length - 1] = { ...assistantMessage };
+                            } else {
+                                msgs.push({ ...assistantMessage });
+                            }
+                            setState({ messages: msgs });
+                        } else if (event.type === 'done') {
+                            // Final update
+                            const msgs = [...state.messages];
+                            if (msgs[msgs.length - 1]?.role === 'assistant') {
+                                msgs[msgs.length - 1] = { ...assistantMessage };
+                            } else {
+                                msgs.push({ ...assistantMessage });
+                            }
+                            setState({ messages: msgs, streaming: false, abortController: null });
+                            saveConversation();
+                        } else if (event.type === 'error') {
+                            console.error('Stream error:', event.message);
+                            setState({ streaming: false, abortController: null });
+                        } else if (event.type === 'usage') {
+                            // Handle usage info if needed
                         }
                     } catch (e) {
-                        if (e.message !== 'Chat API error') console.error('SSE parse error:', e);
+                        // Ignore parse errors for incomplete chunks
                     }
                 }
             }
         }
-        renderMessages();
-    } catch (e) {
-        if (e.name === 'AbortError') {
-            // user cancelled
+    } catch (err) {
+        if (err.name === 'AbortError') {
+            // User cancelled
         } else {
-            console.error('Chat error:', e);
+            console.error('Stream failed:', err);
         }
-    } finally {
-        state.streaming = false;
-        state.abortController = null;
-        if (els.stopBtn) els.stopBtn.style.display = 'none';
-        if (els.sendBtn) els.sendBtn.style.display = 'inline-block';
+        setState({ streaming: false, abortController: null });
     }
 }
 
-function stopStreaming() {
-    if (state.abortController) {
-        state.abortController.abort();
-    }
+// ============================================================
+// Rendering
+// ============================================================
+
+function render() {
+    renderSidebar();
+    renderChat();
+    renderComposer();
+    renderSettings();
+    renderSkills();
+    renderModelPicker();
 }
 
-async function checkBalance() {
+function renderSidebar() {
+    const sidebar = document.getElementById('sidebar');
+    if (!sidebar) return;
+
+    let html = '<div class="sidebar-header">';
+    html += '<h2>Conversations</h2>';
+    html += '<button onclick="newConversation()" title="New conversation">+</button>';
+    html += '</div>';
+
+    // Search
+    html += '<div class="sidebar-search">';
+    html += `<input type="text" placeholder="Search conversations..." value="${escapeHtml(state.conversationSearchQuery)}" oninput="setState({ conversationSearchQuery: this.value })">`;
+    html += '</div>';
+
+    // Conversation list
+    html += '<div class="conversation-list">';
+    const filtered = state.conversations.filter(c =>
+        c.title.toLowerCase().includes(state.conversationSearchQuery.toLowerCase())
+    );
+    for (const conv of filtered) {
+        const active = conv.id === state.currentConversationId ? ' active' : '';
+        html += `<div class="conversation-item${active}" onclick="loadConversation('${conv.id}')">`;
+        html += `<span class="conversation-title">${escapeHtml(conv.title || 'Untitled')}</span>`;
+        html += `<button class="delete-btn" onclick="event.stopPropagation(); deleteConversation('${conv.id}')">&times;</button>`;
+        html += '</div>';
+    }
+    html += '</div>';
+
+    sidebar.innerHTML = html;
+}
+
+function renderChat() {
+    const chat = document.getElementById('chat');
+    if (!chat) return;
+
+    if (state.messages.length === 0) {
+        chat.innerHTML = '<div class="empty-state"><p>Start a conversation</p></div>';
+        return;
+    }
+
+    let html = '';
+    for (const msg of state.messages) {
+        const roleClass = msg.role === 'user' ? 'user-message' : 'assistant-message';
+        html += `<div class="message ${roleClass}">`;
+        html += `<div class="message-content">${escapeHtml(msg.content)}</div>`;
+        html += '</div>';
+    }
+
+    if (state.streaming) {
+        html += '<div class="message assistant-message streaming"><div class="message-content">...</div></div>';
+    }
+
+    chat.innerHTML = html;
+    chat.scrollTop = chat.scrollHeight;
+}
+
+function renderComposer() {
+    const composer = document.getElementById('composer');
+    if (!composer) return;
+    composer.value = state.composerText;
+}
+
+function renderSettings() {
+    const settings = document.getElementById('settings-drawer');
+    if (!settings) return;
+
+    if (!state.isSettingsOpen) {
+        settings.classList.add('hidden');
+        return;
+    }
+    settings.classList.remove('hidden');
+
+    let html = '<div class="drawer-header"><h2>Settings</h2><button onclick="closeSettings()">&times;</button></div>';
+    html += '<div class="drawer-body">';
+
+    // API Key
+    html += '<label>API Key</label>';
+    html += `<input type="password" value="${escapeHtml(state.apiKey)}" onchange="updateApiKey(this.value)">`;
+
+    // Default model
+    html += '<label>Default Model</label>';
+    html += `<select onchange="updateDefaultModel(this.value)">`;
+    html += '<option value="">Select a model...</option>';
+    for (const model of state.models) {
+        const selected = model.id === state.defaultModel ? ' selected' : '';
+        html += `<option value="${escapeHtml(model.id)}"${selected}>${escapeHtml(model.name)}</option>`;
+    }
+    html += '</select>';
+
+    // Theme
+    html += '<label>Theme</label>';
+    html += `<select onchange="updateTheme(this.value)">`;
+    html += `<option value="light"${state.theme === 'light' ? ' selected' : ''}>Light</option>`;
+    html += `<option value="dark"${state.theme === 'dark' ? ' selected' : ''}>Dark</option>`;
+    html += '</select>';
+
+    // Balance
+    if (state.balance) {
+        html += '<h3>Balance</h3>';
+        html += `<p>Credits: ${state.balance.credits}</p>`;
+        html += `<p>Usage: ${state.balance.usage}</p>`;
+        html += `<p>Total: ${state.balance.total}</p>`;
+    }
+
+    html += '</div>';
+    settings.innerHTML = html;
+}
+
+function renderSkills() {
+    const skills = document.getElementById('skills-drawer');
+    if (!skills) return;
+
+    if (!state.isSkillsOpen) {
+        skills.classList.add('hidden');
+        return;
+    }
+    skills.classList.remove('hidden');
+
+    let html = '<div class="drawer-header"><h2>Skills</h2><button onclick="closeSkills()">&times;</button></div>';
+    html += '<div class="drawer-body">';
+
+    for (const skill of state.skills) {
+        const active = state.activeSkills.includes(skill.id);
+        html += `<div class="skill-item">`;
+        html += `<label><input type="checkbox" ${active ? 'checked' : ''} onchange="toggleSkill('${skill.id}', this.checked)"> ${escapeHtml(skill.name)}</label>`;
+        html += '</div>';
+    }
+
+    html += '</div>';
+    skills.innerHTML = html;
+}
+
+function renderModelPicker() {
+    const picker = document.getElementById('model-picker');
+    if (!picker) return;
+
+    if (!state.isModelPickerOpen) {
+        picker.classList.add('hidden');
+        return;
+    }
+    picker.classList.remove('hidden');
+
+    let html = '<div class="drawer-header"><h2>Select Model</h2><button onclick="closeModelPicker()">&times;</button></div>';
+    html += '<div class="drawer-body">';
+
+    // Search
+    html += `<input type="text" placeholder="Search models..." value="${escapeHtml(state.modelSearchQuery)}" oninput="setState({ modelSearchQuery: this.value })">`;
+
+    // Provider filter
+    html += '<select onchange="setState({ selectedProvider: this.value })">';
+    html += '<option value="all">All Providers</option>';
+    const providers = [...new Set(state.models.map(m => m.provider))];
+    for (const provider of providers) {
+        const selected = provider === state.selectedProvider ? ' selected' : '';
+        html += `<option value="${escapeHtml(provider)}"${selected}>${escapeHtml(provider)}</option>`;
+    }
+    html += '</select>';
+
+    // Model list
+    const filtered = state.models.filter(m => {
+        if (state.selectedProvider !== 'all' && m.provider !== state.selectedProvider) return false;
+        if (!m.name.toLowerCase().includes(state.modelSearchQuery.toLowerCase())) return false;
+        return true;
+    });
+
+    for (const model of filtered) {
+        const selected = model.id === state.defaultModel ? ' selected' : '';
+        html += `<div class="model-item${selected}" onclick="selectModel('${escapeHtml(model.id)}')">`;
+        html += `<strong>${escapeHtml(model.name)}</strong>`;
+        html += `<span class="model-provider">${escapeHtml(model.provider)}</span>`;
+        html += `<span class="model-context">${model.context_length || 'N/A'} tokens</span>`;
+        html += '</div>';
+    }
+
+    html += '</div>';
+    picker.innerHTML = html;
+}
+
+// ============================================================
+// Utility functions
+// ============================================================
+
+function escapeHtml(str) {
+    if (!str) return '';
+    const div = document.createElement('div');
+    div.textContent = str;
+    return div.innerHTML;
+}
+
+// ============================================================
+// Event handlers (called from inline onclick)
+// ============================================================
+
+window.newConversation = newConversation;
+window.loadConversation = loadConversation;
+window.deleteConversation = deleteConversation;
+window.closeSettings = closeSettings;
+window.closeSkills = closeSkills;
+window.closeModelPicker = closeModelPicker;
+window.toggleSkill = toggleSkill;
+window.selectModel = selectModel;
+window.updateApiKey = updateApiKey;
+window.updateDefaultModel = updateDefaultModel;
+window.updateTheme = updateTheme;
+
+async function loadConversation(id) {
+    if (state.currentConversationId) {
+        await saveConversation();
+    }
+    await fetchConversation(id);
+}
+
+async function deleteConversation(id) {
     try {
-        const data = await apiFetch('/api/balance');
-        if (els.balanceInfo) {
-            els.balanceInfo.textContent = `Credits: ${data.credits}, Usage: ${data.usage}, Total: ${data.total}`;
+        await fetch(`/api/conversations/${id}`, { method: 'DELETE' });
+        if (state.currentConversationId === id) {
+            setState({ currentConversationId: null, messages: [] });
         }
-    } catch (e) {
-        console.error('Balance check failed:', e);
+        fetchConversations();
+    } catch (err) {
+        console.error('Failed to delete conversation:', err);
     }
 }
 
-async function handleLogout() {
-    try {
-        await fetch('/api/logout', { method: 'POST' });
-        // Reload page to reset all state
-        window.location.reload();
-    } catch (e) {
-        console.error('Logout failed:', e);
+function toggleSkill(id, active) {
+    let activeSkills = [...state.activeSkills];
+    if (active) {
+        if (!activeSkills.includes(id)) activeSkills.push(id);
+    } else {
+        activeSkills = activeSkills.filter(s => s !== id);
     }
+    setState({ activeSkills });
 }
 
-function bindEvents() {
-    if (els.newChatBtn) els.newChatBtn.addEventListener('click', newConversation);
-    if (els.settingsBtn) els.settingsBtn.addEventListener('click', () => {
-        if (els.settingsDrawer) els.settingsDrawer.classList.toggle('open');
-        checkBalance();
-    });
-    if (els.closeSettingsBtn) els.closeSettingsBtn.addEventListener('click', () => {
-        if (els.settingsDrawer) els.settingsDrawer.classList.remove('open');
-    });
-    if (els.skillsBtn) els.skillsBtn.addEventListener('click', () => {
-        if (els.skillsDrawer) els.skillsDrawer.classList.toggle('open');
-    });
-    if (els.closeSkillsBtn) els.closeSkillsBtn.addEventListener('click', () => {
-        if (els.skillsDrawer) els.skillsDrawer.classList.remove('open');
-    });
-    if (els.themeToggle) els.themeToggle.addEventListener('click', toggleTheme);
-    if (els.apiKeyInput) els.apiKeyInput.addEventListener('change', () => {
-        saveConfig({ api_key: els.apiKeyInput.value });
-    });
-    if (els.defaultModelSelect) els.defaultModelSelect.addEventListener('change', () => {
-        saveConfig({ default_model: els.defaultModelSelect.value });
-    });
-    if (els.sendBtn) els.sendBtn.addEventListener('click', sendMessage);
-    if (els.composer) els.composer.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter' && !e.shiftKey) {
-            e.preventDefault();
-            sendMessage();
-        }
-    });
-    if (els.stopBtn) els.stopBtn.addEventListener('click', stopStreaming);
-    if (els.logoutBtn) els.logoutBtn.addEventListener('click', handleLogout);
-    if (els.searchInput) els.searchInput.addEventListener('input', (e) => {
-        filterConversations(e.target.value);
-    });
+function selectModel(id) {
+    setState({ defaultModel: id, isModelPickerOpen: false });
+    localStorage.setItem('default_model', id);
 }
 
-function filterConversations(query) {
-    const items = document.querySelectorAll('.conversation-item');
-    const lower = query.toLowerCase();
-    items.forEach(item => {
-        const match = item.textContent.toLowerCase().includes(lower);
-        item.style.display = match ? 'block' : 'none';
-    });
+function updateApiKey(value) {
+    setState({ apiKey: value });
+    localStorage.setItem('openrouter_api_key', value);
 }
 
-document.addEventListener('DOMContentLoaded', init);
+function updateDefaultModel(value) {
+    setState({ defaultModel: value });
+    localStorage.setItem('default_model', value);
+}
+
+function updateTheme(value) {
+    setState({ theme: value });
+    localStorage.setItem('theme', value);
+    document.documentElement.setAttribute('data-theme', value);
+}
+
+// ============================================================
+// Initialization
+// ============================================================
+
+// Set initial theme from localStorage
+const savedTheme = localStorage.getItem('theme') || 'light';
+document.documentElement.setAttribute('data-theme', savedTheme);
+
+// Fetch initial data
+fetchModels();
+fetchConversations();
+
+// Focus composer on load
+window.addEventListener('load', () => {
+    focusComposer();
+});

@@ -13,6 +13,7 @@ A Claude-style chat application powered by OpenRouter. Chat with hundreds of mod
 - **Settings** — API key management, default model, dark/light theme toggle
 - **Export/Import** — download conversations as JSON or Markdown, restore from backup
 - **Theme toggle** — switch between light and dark themes via the Settings drawer; preference is saved to localStorage
+- **Keyboard shortcuts** — navigate and control the app without leaving the keyboard (see below)
 
 ## Quick start
 
@@ -78,6 +79,22 @@ The API key can also be set via the Settings UI (persisted to `data/config.json`
 The `/api/chat` endpoint returns a Server-Sent Events (SSE) stream. Each event has type `chunk` (partial content), `done` (final), `error` (failure), or `usage` (token usage). The frontend `streamFetch` function in `app.js` processes these events, updating the UI incrementally as chunks arrive, and supports cancellation via an `AbortController`.
 
 The `/api/balance` endpoint returns a JSON object with `credits`, `usage`, and `total` fields representing the OpenRouter account balance.
+
+## Keyboard shortcuts
+
+| Shortcut | Action |
+|---|---|
+| `Ctrl+Shift+O` | Focus the composer |
+| `Ctrl+Shift+N` | New conversation |
+| `Ctrl+Shift+,` | Open settings |
+| `Ctrl+Shift+E` | Open skills |
+| `Escape` | Close modals/drawers or stop generation |
+| `Ctrl+Shift+Delete` | Clear all conversations |
+| `Ctrl+Shift+ArrowUp` | Previous conversation |
+| `Ctrl+Shift+ArrowDown` | Next conversation |
+| `Ctrl+Shift+S` | Toggle theme |
+
+Shortcuts do not fire when the user is typing in an input, textarea, or contenteditable element (except for `Ctrl+Shift+O` and `Escape`, which work globally).
 
 ## Requirements
 
