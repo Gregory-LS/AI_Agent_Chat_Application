@@ -1,126 +1,77 @@
-# OpenRouter Proxy with SSE Streaming
+# MyProject
 
-A lightweight FastAPI server that proxies chat completion requests to [OpenRouter](https://openrouter.ai/) and streams responses back as Server-Sent Events (SSE).
+A brief description of the project, its purpose, and what it does.
 
-## Features
+## Table of Contents
 
-- **SSE Streaming**: Real-time streaming of token responses from OpenRouter.
-- **CORS Enabled**: Allows cross-origin requests from any origin (for development).
-- **Health Check**: Simple `/health` endpoint.
-- **Environment Configuration**: API key and base URL configurable via environment variables.
-
-## Prerequisites
-
-- Python 3.10+
-- An OpenRouter API key ([get one here](https://openrouter.ai/keys))
+- [Installation](#installation)
+- [Usage](#usage)
+- [Testing](#testing)
+- [Contributing](#contributing)
+- [License](#license)
 
 ## Installation
 
 1. Clone the repository:
    ```bash
-   git clone <repo-url>
-   cd <project-directory>
+   git clone https://gitlab.com/example/myproject.git
+   cd myproject
    ```
 
-2. Install dependencies:
+2. Create a virtual environment (optional but recommended):
    ```bash
-   pip install fastapi uvicorn httpx sse-starlette pydantic
+   python -m venv venv
+   source venv/bin/activate   # On Windows: venv\Scripts\activate
    ```
 
-3. Set environment variables:
+3. Install dependencies:
    ```bash
-   export OPENROUTER_API_KEY="your-api-key"
-   export OPENROUTER_BASE_URL="https://openrouter.ai/api/v1"  # optional, default shown
+   pip install -r requirements.txt
    ```
 
-## Running the Server
+## Usage
 
-Start the server with:
+Describe how to use the project. Provide examples where appropriate.
+
+```python
+from myproject import main
+
+# Example usage
+main.run()
+```
+
+Or command-line usage:
 
 ```bash
-python server.py
+python -m myproject --help
 ```
 
-Or using uvicorn directly:
+## Testing
 
-```bash
-uvicorn server:app --host 0.0.0.0 --port 8000
-```
-
-The server will be available at `http://localhost:8000`.
-
-## API Endpoints
-
-### GET /health
-
-Returns `{"status": "healthy"}`.
-
-### POST /chat/completions
-
-Proxies the request to OpenRouter's `/chat/completions` endpoint and streams the response as SSE.
-
-**Request body** (JSON):
-
-| Field      | Type   | Required | Description                                      |
-|------------|--------|----------|--------------------------------------------------|
-| `model`    | string | Yes      | Model identifier (e.g., `openai/gpt-4`)          |
-| `messages` | array  | Yes      | Array of message objects (role, content)         |
-| `stream`   | bool   | No       | Always set to `true` by the proxy (ignored)      |
-
-Additional fields (e.g., `temperature`, `max_tokens`) are passed through to OpenRouter.
-
-**Example using curl:**
-
-```bash
-curl -X POST http://localhost:8000/chat/completions \
-  -H "Content-Type: application/json" \
-  -d '{
-    "model": "openai/gpt-4",
-    "messages": [{"role": "user", "content": "Hello!"}]
-  }'
-```
-
-**Example using JavaScript (browser):**
-
-```javascript
-const eventSource = new EventSource('/chat/completions', {
-  method: 'POST',
-  headers: { 'Content-Type': 'application/json' },
-  body: JSON.stringify({
-    model: 'openai/gpt-4',
-    messages: [{ role: 'user', content: 'Hello!' }]
-  })
-});
-eventSource.onmessage = (event) => {
-  if (event.data === '[DONE]') {
-    eventSource.close();
-  } else {
-    console.log(JSON.parse(event.data));
-  }
-};
-```
-
-## Running Tests
-
-Install test dependencies:
-
-```bash
-pip install pytest pytest-asyncio httpx
-```
-
-Run tests:
+Run tests with pytest:
 
 ```bash
 pytest tests/
 ```
 
-## Environment Variables
+To run with coverage:
 
-| Variable             | Default                              | Description                     |
-|----------------------|--------------------------------------|---------------------------------|
-| `OPENROUTER_API_KEY` | (empty)                              | Your OpenRouter API key         |
-| `OPENROUTER_BASE_URL`| `https://openrouter.ai/api/v1`       | Base URL for OpenRouter API     |
+```bash
+pytest --cov=myproject tests/
+```
+
+## Contributing
+
+Contributions are welcome! Please follow these steps:
+
+1. Fork the repository.
+2. Create a feature branch (`git checkout -b feature/amazing-feature`).
+3. Commit your changes (`git commit -m 'Add some amazing feature'`).
+4. Push to the branch (`git push origin feature/amazing-feature`).
+5. Open a Merge Request.
+
+Please ensure that your code passes all tests and adheres to the coding style (e.g., `black`, `flake8`).
 
 ## License
 
-MIT
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
