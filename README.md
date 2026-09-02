@@ -6,13 +6,13 @@ A Claude-style chat application powered by OpenRouter. Chat with hundreds of mod
 
 - **Chat** — stream responses, stop mid-stream, copy messages, message metadata
 - **Model picker** — browse all OpenRouter models, grouped by provider, searchable, with context/pricing info
-- **Balance check** — view your OpenRouter account balance (credits remaining) in the settings drawer
+- **Balance check** — view your OpenRouter account balance (credits remaining) in the settings modal
 - **Skills** — enable/disable built-in skills or create your own custom system prompts
 - **Conversations** — sidebar with search, rename, delete, auto-title from first message
 - **Attachments** — upload images (sent to vision-capable models), text/code files (inlined as context)
-- **Settings** — API key management, default model, dark/light theme toggle
+- **Settings modal** — API key management, default model selection, dark/light theme toggle, logout
 - **Export/Import** — download conversations as JSON or Markdown, restore from backup
-- **Theme toggle** — switch between light and dark themes via the Settings drawer; preference is saved to localStorage
+- **Theme toggle** — switch between light and dark themes via the Settings modal; preference is saved to localStorage
 - **Keyboard shortcuts** — navigate and control the app without leaving the keyboard (see below)
 
 ## Quick start
@@ -35,7 +35,7 @@ The `data/` directory (config, conversations, skills, attachments) is created au
 | `HOST` | `[IP_ADDRESS]` | Server bind address |
 | `PORT` | `8000` | Server port |
 
-The API key can also be set via the Settings UI (persisted to `data/config.json`).
+The API key can also be set via the Settings modal (persisted to `data/config.json`).
 
 ## File layout
 
@@ -55,6 +55,7 @@ The API key can also be set via the Settings UI (persisted to `data/config.json`
 │   ├── test_app.html      # Test runner for app.js
 │   ├── test_app.js        # Unit tests for app.js state management and streaming
 │   ├── test_openrouter.py # OpenRouter API unit tests
+│   ├── test_settings.js   # Unit tests for settings modal
 │   ├── test_styles.py
 │   └── test_server.py     # Backend unit tests
 └── README.md
@@ -80,13 +81,24 @@ The `/api/chat` endpoint returns a Server-Sent Events (SSE) stream. Each event h
 
 The `/api/balance` endpoint returns a JSON object with `credits`, `usage`, and `total` fields representing the OpenRouter account balance.
 
+## Settings modal
+
+The Settings modal provides:
+- **API Key** — input your OpenRouter API key (stored in `data/config.json` and `localStorage`)
+- **Default Model** — select a default model from the available models list
+- **Theme Toggle** — switch between light and dark themes
+- **Balance** — view your current OpenRouter account balance
+- **Logout** — clear the API key and return to the login state
+
+Open the modal by clicking the ⚙️ button in the sidebar footer, or use the keyboard shortcut `Ctrl+Shift+,`.
+
 ## Keyboard shortcuts
 
 | Shortcut | Action |
 |---|---|
 | `Ctrl+Shift+O` | Focus the composer |
 | `Ctrl+Shift+N` | New conversation |
-| `Ctrl+Shift+,` | Open settings |
+| `Ctrl+Shift+,` | Open settings modal |
 | `Ctrl+Shift+E` | Open skills |
 | `Escape` | Close modals/drawers or stop generation |
 | `Ctrl+Shift+Delete` | Clear all conversations |
@@ -124,4 +136,4 @@ The UI uses CSS custom properties for theming. Two themes are supported:
 - **Light** (default) — white backgrounds, dark text, blue accent
 - **Dark** — dark backgrounds, light text, light blue accent
 
-Toggle theme via the settings drawer or `data-theme` attribute on `<html>`. The preference is saved in `localStorage` and persists across sessions.
+Toggle theme via the Settings modal or `data-theme` attribute on `<html>`. The preference is saved in `localStorage` and persists across sessions.

@@ -1,12 +1,6 @@
 // app.js — Claude-style AI chat frontend
 // State management, streaming fetch, model picker, skills, conversation management, keyboard shortcuts
 
-import { state, setState, getState } from './state.js';
-
-// ============================================================
-// State management
-// ============================================================
-
 const state = {
     apiKey: localStorage.getItem('openrouter_api_key') || '',
     defaultModel: localStorage.getItem('default_model') || '',
@@ -41,28 +35,25 @@ function getState() {
 }
 
 // ============================================================
-// Keyboard shortcuts (FIX #264)
+// Keyboard shortcuts
 // ============================================================
 
 document.addEventListener('keydown', function(e) {
-    // Ignore if user is typing in an input/textarea (except for shortcuts that should work globally)
     const tag = e.target.tagName.toLowerCase();
     const isInput = tag === 'input' || tag === 'textarea' || tag === 'select' || e.target.isContentEditable;
 
-    // Ctrl+Shift+O — Focus composer (works even in inputs)
     if (e.ctrlKey && e.shiftKey && e.key === 'O') {
         e.preventDefault();
         focusComposer();
         return;
     }
 
-    // Escape — Close modals/drawers or stop generation (works everywhere)
     if (e.key === 'Escape') {
         e.preventDefault();
         if (state.streaming) {
             stopGeneration();
         } else if (state.isSettingsOpen) {
-            closeSettings();
+            closeSettingsModal();
         } else if (state.isSkillsOpen) {
             closeSkills();
         } else if (state.isModelPickerOpen) {
@@ -71,52 +62,44 @@ document.addEventListener('keydown', function(e) {
         return;
     }
 
-    // If inside an input, don't handle other shortcuts
     if (isInput) return;
 
-    // Ctrl+Shift+N — New conversation
     if (e.ctrlKey && e.shiftKey && e.key === 'N') {
         e.preventDefault();
         newConversation();
         return;
     }
 
-    // Ctrl+Shift+, — Open settings
     if (e.ctrlKey && e.shiftKey && e.key === ',') {
         e.preventDefault();
-        openSettings();
+        openSettingsModal();
         return;
     }
 
-    // Ctrl+Shift+E — Open skills
     if (e.ctrlKey && e.shiftKey && e.key === 'E') {
         e.preventDefault();
         openSkills();
         return;
     }
 
-    // Ctrl+Shift+Delete — Clear conversations
     if (e.ctrlKey && e.shiftKey && e.key === 'Delete') {
         e.preventDefault();
         clearConversations();
         return;
     }
 
-    // Ctrl+Shift+ArrowUp — Previous conversation
     if (e.ctrlKey && e.shiftKey && e.key === 'ArrowUp') {
         e.preventDefault();
         navigateConversation(-1);
         return;
     }
 
-    // Ctrl+Shift+ArrowDown — Next conversation
     if (e.ctrlKey && e.shiftKey && e.key === 'ArrowDown') {
         e.preventDefault();
         navigateConversation(1);
         return;
     }
 
-    // Ctrl+Shift+S — Toggle theme
     if (e.ctrlKey && e.shiftKey && e.key === 'S') {
         e.preventDefault();
         toggleTheme();
@@ -128,7 +111,6 @@ function focusComposer() {
     const composer = document.getElementById('composer');
     if (composer) {
         composer.focus();
-        // Move cursor to end
         const len = composer.value.length;
         composer.setSelectionRange(len, len);
     }
@@ -141,10 +123,6 @@ function stopGeneration() {
     }
 }
 
-function closeSettings() {
-    setState({ isSettingsOpen: false });
-}
-
 function closeSkills() {
     setState({ isSkillsOpen: false });
 }
@@ -154,7 +132,6 @@ function closeModelPicker() {
 }
 
 function newConversation() {
-    // Save current conversation if any
     if (state.currentConversationId) {
         saveConversation();
     }
@@ -167,19 +144,76 @@ function newConversation() {
     focusComposer();
 }
 
-function openSettings() {
+function openSettingsModal() {
     setState({ isSettingsOpen: true });
+    const modal = document.getElementById('settings-modal');
+    const overlay = document.getElementById('overlay');
+    modal.classList.remove('hidden');
+    overlay.classList.remove('hidden');
     fetchBalance();
+    populateDefaultModelSelect();
+    const apiKeyInput = document.getElementById('api-key-input');
+    if (apiKeyInput) {
+        apiKeyInput.value = state.apiKey || '';
+    }
+    const themeToggle = document.getElementById('theme-toggle');
+    if (themeToggle) {
+        themeToggle.textContent = state.theme === 'light' ? 'Switch to Dark' : 'Switch to Light';
+    }
 }
 
-function openSkills() {
-    setState({ isSkillsOpen: true });
-    fetchSkills();
+function closeSettingsModal() {
+    setState({ isSettingsOpen: false });
+    const modal = document.getElementById('settings-modal');
+    const overlay = document.getElementById('overlay');
+    modal.classList.add('hidden');
+    overlay.classList.add('hidden');
+}
+
+function saveSettingsModal() {
+    const apiKeyInput = document.getElementById('api-key-input');
+    const defaultModelSelect = document.getElementById('default-model-select');
+    const newApiKey = apiKeyInput ? apiKeyInput.value.trim() : state.apiKey;
+    const newDefaultModel = defaultModelSelect ? defaultModelSelect.value : state.defaultModel;
+
+    localStorage.setItem('openrouter_api_key', newApiKey);
+    localStorage.setItem('default_model', newDefaultModel);
+
+    fetch('/api/config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ api_key: newApiKey, default_model: newDefaultModel })
+    }).then(resp => {
+        if (!resp.ok) throw new Error('Failed to save config');
+        setState({ apiKey: newApiKey, defaultModel: newDefaultModel });
+        closeSettingsModal();
+    }).catch(err => {
+        console.error('Error saving settings:', err);
+        alert('Failed to save settings. Please try again.');
+    });
+}
+
+function populateDefaultModelSelect() {
+    const select = document.getElementById('default-model-select');
+    if (!select) return;
+    const currentValue = state.defaultModel;
+    select.innerHTML = '<option value="">— Select a model —</option>' +
+        state.models.map(m => `<option value="${m.id}" ${m.id === currentValue ? 'selected' : ''}>${m.name || m.id}</option>`).join('');
+}
+
+function toggleTheme() {
+    const newTheme = state.theme === 'light' ? 'dark' : 'light';
+    localStorage.setItem('theme', newTheme);
+    document.documentElement.setAttribute('data-theme', newTheme);
+    setState({ theme: newTheme });
+    const themeToggle = document.getElementById('theme-toggle');
+    if (themeToggle) {
+        themeToggle.textContent = newTheme === 'light' ? 'Switch to Dark' : 'Switch to Light';
+    }
 }
 
 function clearConversations() {
     if (confirm('Are you sure you want to delete all conversations? This cannot be undone.')) {
-        // Delete all conversations via API
         const promises = state.conversations.map(conv =>
             fetch(`/api/conversations/${conv.id}`, { method: 'DELETE' })
         );
@@ -209,13 +243,6 @@ function navigateConversation(direction) {
     }
 }
 
-function toggleTheme() {
-    const newTheme = state.theme === 'light' ? 'dark' : 'light';
-    localStorage.setItem('theme', newTheme);
-    document.documentElement.setAttribute('data-theme', newTheme);
-    setState({ theme: newTheme });
-}
-
 // ============================================================
 // API helpers
 // ============================================================
@@ -235,6 +262,10 @@ async function fetchBalance() {
         const response = await fetch('/api/balance');
         const balance = await response.json();
         setState({ balance });
+        const balanceInfo = document.getElementById('balance-info');
+        if (balanceInfo) {
+            balanceInfo.textContent = `Balance: $${balance.credits?.toFixed(2) || '0.00'}`;
+        }
     } catch (err) {
         console.error('Failed to fetch balance:', err);
     }
@@ -284,398 +315,140 @@ async function fetchSkills() {
 }
 
 // ============================================================
-// Chat streaming
+// Event listeners
 // ============================================================
 
-async function sendMessage() {
-    const text = state.composerText.trim();
-    if (!text && state.composerAttachments.length === 0) return;
+document.addEventListener('DOMContentLoaded', function() {
+    // Theme initialization
+    document.documentElement.setAttribute('data-theme', state.theme);
 
-    // Build messages array
-    const userMessage = {
-        role: 'user',
-        content: text,
-        attachments: state.composerAttachments,
-    };
+    // Settings button
+    document.getElementById('settings-btn').addEventListener('click', openSettingsModal);
 
-    const messages = [...state.messages, userMessage];
-    setState({ messages, composerText: '', composerAttachments: [], streaming: true });
+    // Settings modal close button
+    document.getElementById('settings-close-btn').addEventListener('click', closeSettingsModal);
 
-    // Create conversation if needed
-    if (!state.currentConversationId) {
-        try {
-            const response = await fetch('/api/conversations', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ messages: [userMessage] }),
-            });
-            const conv = await response.json();
-            setState({ currentConversationId: conv.id });
-            fetchConversations();
-        } catch (err) {
-            console.error('Failed to create conversation:', err);
-            setState({ streaming: false });
-            return;
+    // Overlay click closes modal
+    document.getElementById('overlay').addEventListener('click', closeSettingsModal);
+
+    // Theme toggle in modal
+    document.getElementById('theme-toggle').addEventListener('click', function() {
+        toggleTheme();
+    });
+
+    // Logout button
+    document.getElementById('logout-btn').addEventListener('click', function() {
+        fetch('/api/logout', { method: 'POST' }).then(() => {
+            localStorage.removeItem('openrouter_api_key');
+            setState({ apiKey: '' });
+            closeSettingsModal();
+        }).catch(err => console.error('Logout failed:', err));
+    });
+
+    // Save settings on Enter in API key input
+    document.getElementById('api-key-input').addEventListener('keydown', function(e) {
+        if (e.key === 'Enter') {
+            saveSettingsModal();
         }
-    }
+    });
 
-    // Stream response
-    const abortController = new AbortController();
-    setState({ abortController });
+    // Initial data fetch
+    fetchModels();
+    fetchConversations();
+});
 
+// ============================================================
+// Render function (stub — will be expanded)
+// ============================================================
+
+function render() {
+    // Placeholder for future rendering logic
+}
+
+// ============================================================
+// Streaming fetch (stub — will be expanded)
+// ============================================================
+
+async function streamFetch(url, options, onChunk, onDone, onError) {
     try {
-        const response = await fetch('/api/chat', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                model: state.defaultModel,
-                messages: messages,
-                skills: state.activeSkills,
-            }),
-            signal: abortController.signal,
-        });
-
+        const response = await fetch(url, options);
         const reader = response.body.getReader();
         const decoder = new TextDecoder();
         let buffer = '';
-        let assistantMessage = { role: 'assistant', content: '' };
 
         while (true) {
             const { done, value } = await reader.read();
             if (done) break;
-
             buffer += decoder.decode(value, { stream: true });
             const lines = buffer.split('\n');
-            buffer = lines.pop(); // Keep incomplete line in buffer
-
+            buffer = lines.pop();
             for (const line of lines) {
                 if (line.startsWith('data: ')) {
                     const data = line.slice(6);
+                    if (data === '[DONE]') {
+                        if (onDone) onDone();
+                        return;
+                    }
                     try {
-                        const event = JSON.parse(data);
-                        if (event.type === 'chunk') {
-                            assistantMessage.content += event.content;
-                            // Update the last message in state
-                            const msgs = [...state.messages];
-                            if (msgs[msgs.length - 1]?.role === 'assistant') {
-                                msgs[msgs.length - 1] = { ...assistantMessage };
-                            } else {
-                                msgs.push({ ...assistantMessage });
-                            }
-                            setState({ messages: msgs });
-                        } else if (event.type === 'done') {
-                            // Final update
-                            const msgs = [...state.messages];
-                            if (msgs[msgs.length - 1]?.role === 'assistant') {
-                                msgs[msgs.length - 1] = { ...assistantMessage };
-                            } else {
-                                msgs.push({ ...assistantMessage });
-                            }
-                            setState({ messages: msgs, streaming: false, abortController: null });
-                            saveConversation();
-                        } else if (event.type === 'error') {
-                            console.error('Stream error:', event.message);
-                            setState({ streaming: false, abortController: null });
-                        } else if (event.type === 'usage') {
-                            // Handle usage info if needed
+                        const parsed = JSON.parse(data);
+                        if (parsed.type === 'chunk' && onChunk) {
+                            onChunk(parsed.content);
+                        } else if (parsed.type === 'error' && onError) {
+                            onError(parsed.message || 'Unknown error');
+                            return;
+                        } else if (parsed.type === 'done' && onDone) {
+                            onDone();
+                            return;
                         }
                     } catch (e) {
-                        // Ignore parse errors for incomplete chunks
+                        // ignore parse errors for incomplete lines
                     }
                 }
             }
         }
+        if (onDone) onDone();
     } catch (err) {
-        if (err.name === 'AbortError') {
-            // User cancelled
-        } else {
-            console.error('Stream failed:', err);
-        }
-        setState({ streaming: false, abortController: null });
+        if (onError) onError(err.message);
     }
 }
 
 // ============================================================
-// Rendering
+// Model picker (stub)
 // ============================================================
 
-function render() {
-    renderSidebar();
-    renderChat();
-    renderComposer();
-    renderSettings();
-    renderSkills();
-    renderModelPicker();
+function openModelPicker() {
+    // Placeholder
 }
 
-function renderSidebar() {
-    const sidebar = document.getElementById('sidebar');
-    if (!sidebar) return;
-
-    let html = '<div class="sidebar-header">';
-    html += '<h2>Conversations</h2>';
-    html += '<button onclick="newConversation()" title="New conversation">+</button>';
-    html += '</div>';
-
-    // Search
-    html += '<div class="sidebar-search">';
-    html += `<input type="text" placeholder="Search conversations..." value="${escapeHtml(state.conversationSearchQuery)}" oninput="setState({ conversationSearchQuery: this.value })">`;
-    html += '</div>';
-
-    // Conversation list
-    html += '<div class="conversation-list">';
-    const filtered = state.conversations.filter(c =>
-        c.title.toLowerCase().includes(state.conversationSearchQuery.toLowerCase())
-    );
-    for (const conv of filtered) {
-        const active = conv.id === state.currentConversationId ? ' active' : '';
-        html += `<div class="conversation-item${active}" onclick="loadConversation('${conv.id}')">`;
-        html += `<span class="conversation-title">${escapeHtml(conv.title || 'Untitled')}</span>`;
-        html += `<button class="delete-btn" onclick="event.stopPropagation(); deleteConversation('${conv.id}')">&times;</button>`;
-        html += '</div>';
-    }
-    html += '</div>';
-
-    sidebar.innerHTML = html;
-}
-
-function renderChat() {
-    const chat = document.getElementById('chat');
-    if (!chat) return;
-
-    if (state.messages.length === 0) {
-        chat.innerHTML = '<div class="empty-state"><p>Start a conversation</p></div>';
-        return;
-    }
-
-    let html = '';
-    for (const msg of state.messages) {
-        const roleClass = msg.role === 'user' ? 'user-message' : 'assistant-message';
-        html += `<div class="message ${roleClass}">`;
-        html += `<div class="message-content">${escapeHtml(msg.content)}</div>`;
-        html += '</div>';
-    }
-
-    if (state.streaming) {
-        html += '<div class="message assistant-message streaming"><div class="message-content">...</div></div>';
-    }
-
-    chat.innerHTML = html;
-    chat.scrollTop = chat.scrollHeight;
-}
-
-function renderComposer() {
-    const composer = document.getElementById('composer');
-    if (!composer) return;
-    composer.value = state.composerText;
-}
-
-function renderSettings() {
-    const settings = document.getElementById('settings-drawer');
-    if (!settings) return;
-
-    if (!state.isSettingsOpen) {
-        settings.classList.add('hidden');
-        return;
-    }
-    settings.classList.remove('hidden');
-
-    let html = '<div class="drawer-header"><h2>Settings</h2><button onclick="closeSettings()">&times;</button></div>';
-    html += '<div class="drawer-body">';
-
-    // API Key
-    html += '<label>API Key</label>';
-    html += `<input type="password" value="${escapeHtml(state.apiKey)}" onchange="updateApiKey(this.value)">`;
-
-    // Default model
-    html += '<label>Default Model</label>';
-    html += `<select onchange="updateDefaultModel(this.value)">`;
-    html += '<option value="">Select a model...</option>';
-    for (const model of state.models) {
-        const selected = model.id === state.defaultModel ? ' selected' : '';
-        html += `<option value="${escapeHtml(model.id)}"${selected}>${escapeHtml(model.name)}</option>`;
-    }
-    html += '</select>';
-
-    // Theme
-    html += '<label>Theme</label>';
-    html += `<select onchange="updateTheme(this.value)">`;
-    html += `<option value="light"${state.theme === 'light' ? ' selected' : ''}>Light</option>`;
-    html += `<option value="dark"${state.theme === 'dark' ? ' selected' : ''}>Dark</option>`;
-    html += '</select>';
-
-    // Balance
-    if (state.balance) {
-        html += '<h3>Balance</h3>';
-        html += `<p>Credits: ${state.balance.credits}</p>`;
-        html += `<p>Usage: ${state.balance.usage}</p>`;
-        html += `<p>Total: ${state.balance.total}</p>`;
-    }
-
-    html += '</div>';
-    settings.innerHTML = html;
-}
-
-function renderSkills() {
-    const skills = document.getElementById('skills-drawer');
-    if (!skills) return;
-
-    if (!state.isSkillsOpen) {
-        skills.classList.add('hidden');
-        return;
-    }
-    skills.classList.remove('hidden');
-
-    let html = '<div class="drawer-header"><h2>Skills</h2><button onclick="closeSkills()">&times;</button></div>';
-    html += '<div class="drawer-body">';
-
-    for (const skill of state.skills) {
-        const active = state.activeSkills.includes(skill.id);
-        html += `<div class="skill-item">`;
-        html += `<label><input type="checkbox" ${active ? 'checked' : ''} onchange="toggleSkill('${skill.id}', this.checked)"> ${escapeHtml(skill.name)}</label>`;
-        html += '</div>';
-    }
-
-    html += '</div>';
-    skills.innerHTML = html;
-}
-
-function renderModelPicker() {
-    const picker = document.getElementById('model-picker');
-    if (!picker) return;
-
-    if (!state.isModelPickerOpen) {
-        picker.classList.add('hidden');
-        return;
-    }
-    picker.classList.remove('hidden');
-
-    let html = '<div class="drawer-header"><h2>Select Model</h2><button onclick="closeModelPicker()">&times;</button></div>';
-    html += '<div class="drawer-body">';
-
-    // Search
-    html += `<input type="text" placeholder="Search models..." value="${escapeHtml(state.modelSearchQuery)}" oninput="setState({ modelSearchQuery: this.value })">`;
-
-    // Provider filter
-    html += '<select onchange="setState({ selectedProvider: this.value })">';
-    html += '<option value="all">All Providers</option>';
-    const providers = [...new Set(state.models.map(m => m.provider))];
-    for (const provider of providers) {
-        const selected = provider === state.selectedProvider ? ' selected' : '';
-        html += `<option value="${escapeHtml(provider)}"${selected}>${escapeHtml(provider)}</option>`;
-    }
-    html += '</select>';
-
-    // Model list
-    const filtered = state.models.filter(m => {
-        if (state.selectedProvider !== 'all' && m.provider !== state.selectedProvider) return false;
-        if (!m.name.toLowerCase().includes(state.modelSearchQuery.toLowerCase())) return false;
-        return true;
-    });
-
-    for (const model of filtered) {
-        const selected = model.id === state.defaultModel ? ' selected' : '';
-        html += `<div class="model-item${selected}" onclick="selectModel('${escapeHtml(model.id)}')">`;
-        html += `<strong>${escapeHtml(model.name)}</strong>`;
-        html += `<span class="model-provider">${escapeHtml(model.provider)}</span>`;
-        html += `<span class="model-context">${model.context_length || 'N/A'} tokens</span>`;
-        html += '</div>';
-    }
-
-    html += '</div>';
-    picker.innerHTML = html;
+function closeModelPicker() {
+    // Placeholder
 }
 
 // ============================================================
-// Utility functions
+// Skills (stub)
 // ============================================================
 
-function escapeHtml(str) {
-    if (!str) return '';
-    const div = document.createElement('div');
-    div.textContent = str;
-    return div.innerHTML;
+function openSkills() {
+    setState({ isSkillsOpen: true });
+    fetchSkills();
 }
 
-// ============================================================
-// Event handlers (called from inline onclick)
-// ============================================================
-
-window.newConversation = newConversation;
-window.loadConversation = loadConversation;
-window.deleteConversation = deleteConversation;
-window.closeSettings = closeSettings;
-window.closeSkills = closeSkills;
-window.closeModelPicker = closeModelPicker;
-window.toggleSkill = toggleSkill;
-window.selectModel = selectModel;
-window.updateApiKey = updateApiKey;
-window.updateDefaultModel = updateDefaultModel;
-window.updateTheme = updateTheme;
-
-async function loadConversation(id) {
-    if (state.currentConversationId) {
-        await saveConversation();
-    }
-    await fetchConversation(id);
-}
-
-async function deleteConversation(id) {
-    try {
-        await fetch(`/api/conversations/${id}`, { method: 'DELETE' });
-        if (state.currentConversationId === id) {
-            setState({ currentConversationId: null, messages: [] });
-        }
-        fetchConversations();
-    } catch (err) {
-        console.error('Failed to delete conversation:', err);
-    }
-}
-
-function toggleSkill(id, active) {
-    let activeSkills = [...state.activeSkills];
-    if (active) {
-        if (!activeSkills.includes(id)) activeSkills.push(id);
-    } else {
-        activeSkills = activeSkills.filter(s => s !== id);
-    }
-    setState({ activeSkills });
-}
-
-function selectModel(id) {
-    setState({ defaultModel: id, isModelPickerOpen: false });
-    localStorage.setItem('default_model', id);
-}
-
-function updateApiKey(value) {
-    setState({ apiKey: value });
-    localStorage.setItem('openrouter_api_key', value);
-}
-
-function updateDefaultModel(value) {
-    setState({ defaultModel: value });
-    localStorage.setItem('default_model', value);
-}
-
-function updateTheme(value) {
-    setState({ theme: value });
-    localStorage.setItem('theme', value);
-    document.documentElement.setAttribute('data-theme', value);
+function closeSkills() {
+    setState({ isSkillsOpen: false });
 }
 
 // ============================================================
-// Initialization
+// Conversation loading (stub)
 // ============================================================
 
-// Set initial theme from localStorage
-const savedTheme = localStorage.getItem('theme') || 'light';
-document.documentElement.setAttribute('data-theme', savedTheme);
+function loadConversation(id) {
+    fetchConversation(id);
+}
 
-// Fetch initial data
-fetchModels();
-fetchConversations();
+// ============================================================
+// Export
+// ============================================================
 
-// Focus composer on load
-window.addEventListener('load', () => {
-    focusComposer();
-});
+function exportConversation(id, format) {
+    window.open(`/api/conversations/${id}/export?format=${format}`, '_blank');
+}
