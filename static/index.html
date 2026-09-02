@@ -1,123 +1,49 @@
 <!DOCTYPE html>
 <html lang="en" data-theme="light">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Agentic Chat</title>
-    <link rel="stylesheet" href="styles.css">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Agentic Chat</title>
+  <link rel="stylesheet" href="styles.css">
 </head>
 <body>
-    <div id="app">
-        <!-- Sidebar -->
-        <aside id="sidebar">
-            <div id="sidebar-header">
-                <button id="new-chat-btn" title="New conversation">+ New Chat</button>
-                <button id="toggle-sidebar-btn" title="Toggle sidebar">☰</button>
-            </div>
-            <div id="conversation-list">
-                <!-- Conversation items rendered by app.js -->
-            </div>
-            <div id="sidebar-footer">
-                <button id="settings-btn" title="Settings">⚙️</button>
-                <button id="skills-btn" title="Skills">🧠</button>
-            </div>
-        </aside>
+  <!-- Sidebar -->
+  <div id="sidebar">
+    <h2>Conversations</h2>
+    <div id="conversation-list"></div>
+    <button id="new-chat">+ New Chat</button>
+  </div>
 
-        <!-- Main chat area -->
-        <main id="chat-area">
-            <div id="welcome-screen" class="welcome">
-                <h1>Welcome to Agentic Chat</h1>
-                <p>Start a conversation by typing a message below.</p>
-            </div>
-            <div id="message-container" style="display:none;">
-                <!-- Messages rendered by app.js -->
-            </div>
-            <div id="composer">
-                <textarea id="user-input" placeholder="Type your message..." rows="1"></textarea>
-                <button id="send-btn" disabled>Send</button>
-                <button id="stop-btn" style="display:none;">Stop</button>
-                <button id="attach-btn" title="Attach file">📎</button>
-                <input type="file" id="file-input" accept="image/*,.txt,.py,.js,.html,.css,.json,.md" multiple style="display:none;">
-            </div>
-            <div id="model-indicator">
-                <span id="current-model-name">Select a model</span>
-                <button id="model-picker-btn">Change</button>
-            </div>
-        </main>
-
-        <!-- Settings drawer -->
-        <div id="settings-drawer" class="drawer" style="display:none;">
-            <div class="drawer-header">
-                <h2>Settings</h2>
-                <button class="close-drawer-btn">✕</button>
-            </div>
-            <div class="drawer-content">
-                <label for="api-key-input">OpenRouter API Key</label>
-                <input type="password" id="api-key-input" placeholder="sk-or-...">
-                <label for="default-model-select">Default Model</label>
-                <select id="default-model-select">
-                    <option value="">None (always ask)</option>
-                </select>
-                <label for="theme-select">Theme</label>
-                <select id="theme-select">
-                    <option value="light">Light</option>
-                    <option value="dark">Dark</option>
-                </select>
-                <button id="save-settings-btn">Save</button>
-                <div id="balance-info">
-                    <p>Balance: <span id="balance-credits">—</span></p>
-                </div>
-            </div>
-        </div>
-
-        <!-- Skills drawer -->
-        <div id="skills-drawer" class="drawer" style="display:none;">
-            <div class="drawer-header">
-                <h2>Skills</h2>
-                <button class="close-drawer-btn">✕</button>
-            </div>
-            <div class="drawer-content">
-                <div id="skills-list">
-                    <!-- Skills rendered by app.js -->
-                </div>
-                <button id="new-skill-btn">+ New Skill</button>
-            </div>
-        </div>
-
-        <!-- Model picker modal -->
-        <div id="model-picker-modal" class="modal" style="display:none;">
-            <div class="modal-content">
-                <div class="modal-header">
-                    <h2>Select Model</h2>
-                    <button class="close-modal-btn">✕</button>
-                </div>
-                <input type="text" id="model-search-input" placeholder="Search models...">
-                <div id="model-list">
-                    <!-- Models rendered by app.js -->
-                </div>
-            </div>
-        </div>
-
-        <!-- Export/Import modal -->
-        <div id="export-import-modal" class="modal" style="display:none;">
-            <div class="modal-content">
-                <div class="modal-header">
-                    <h2>Export / Import</h2>
-                    <button class="close-modal-btn">✕</button>
-                </div>
-                <div class="modal-body">
-                    <button id="export-json-btn">Export as JSON</button>
-                    <button id="export-markdown-btn">Export as Markdown</button>
-                    <button id="import-btn">Import from file</button>
-                    <input type="file" id="import-file-input" accept=".json" style="display:none;">
-                </div>
-            </div>
-        </div>
-
-        <!-- Overlay for drawers/modals -->
-        <div id="overlay" class="overlay" style="display:none;"></div>
+  <!-- Chat area -->
+  <div id="chat-area">
+    <div id="messages"></div>
+    <div id="composer">
+      <textarea id="message-input" placeholder="Type your message..." rows="3"></textarea>
+      <div id="composer-actions">
+        <select id="model-picker">
+          <option value="">Select a model...</option>
+        </select>
+        <button id="send-btn">Send</button>
+        <button id="settings-btn">⚙️ Settings</button>
+      </div>
     </div>
+  </div>
 
-    <script src="app.js"></script>
+  <!-- Settings drawer -->
+  <div id="settings-drawer">
+    <h2>Settings</h2>
+    <label>
+      API Key:
+      <input type="password" id="api-key-input" placeholder="sk-or-...">
+    </label>
+    <label>
+      Default Model:
+      <select id="default-model-select"></select>
+    </label>
+    <button id="theme-toggle">🌙 Dark</button>
+    <button id="close-settings">Close</button>
+  </div>
+
+  <script src="app.js"></script>
 </body>
 </html>
