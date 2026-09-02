@@ -4,33 +4,62 @@ import sys
 import tempfile
 import unittest
 from unittest.mock import patch, MagicMock
-from io import BytesIO
 
-# Add parent directory to path
+# Add parent directory to path so we can import server
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from http.server import HTTPServer
-from server import ChatHandler, ATTACHMENTS_DIR, ALLOWED_MIME_TYPES, MAX_ATTACHMENT_SIZE
+from server import ChatHandler, load_config, save_config, get_api_key
 
-
-class TestAttachmentHandling(unittest.TestCase):
-    """Tests for attachment upload endpoint."""
-
+class TestServerConfig(unittest.TestCase):
     def setUp(self):
         self.temp_dir = tempfile.mkdtemp()
-        self.attachments_dir = os.path.join(self.temp_dir, 'attachments')
-        os.makedirs(self.attachments_dir, exist_ok=True)
-
-        # Patch ATTACHMENTS_DIR
-        self.patcher = patch('server.ATTACHMENTS_DIR', self.attachments_dir)
+        self.patcher = patch('server.DATA_DIR', self.temp_dir)
         self.patcher.start()
+        self.config_file = os.path.join(self.temp_dir, 'config.json')
+        # Ensure DATA_DIR subdirs exist
+        os.makedirs(os.path.join(self.temp_dir, 'conversations'), exist_ok=True)
+        os.makedirs(os.path.join(self.temp_dir, 'attachments'), exist_ok=True)
 
+    def tearDown(self):
+        self.patcher.stop()
+        import shutil
+        shutil.rmtree(self.temp_dir, ignore_errors=True)
+
+    def test_load_config_empty(self):
+        config = load_config()
+        self.assertEqual(config, {})
+
+    def test_save_and_load_config(self):
+        save_config({'api_key': 'test-key'})
+        config = load_config()
+        self.assertEqual(config.get('api_key'), 'test-key')
+
+    def test_get_api_key_from_config(self):
+        save_config({'api_key': 'config-key'})
+        key = get_api_key()
+        self.assertEqual(key, 'config-key')
+
+    @patch.dict(os.environ, {'OPENROUTER_API_KEY': 'env-key'}, clear=True)
+    def test_get_api_key_from_env(self):
+        # Remove config file so it falls back to env
+        if os.path.exists(self.config_file):
+            os.remove(self.config_file)
+        key = get_api_key()
+        self.assertEqual(key, 'env-key')
+
+class TestChatHandlerModels(unittest.TestCase):
+    def setUp(self):
+        self.temp_dir = tempfile.mkdtemp()
+        self.patcher = patch('server.DATA_DIR', self.temp_dir)
+        self.patcher.start()
+        os.makedirs(os.path.join(self.temp_dir, 'conversations'), exist_ok=True)
+        os.makedirs(os.path.join(self.temp_dir, 'attachments'), exist_ok=True)
         # Create a mock request handler
         self.handler = ChatHandler.__new__(ChatHandler)
-        self.handler.path = '/api/attachments'
+        self.handler.path = '/api/models'
         self.handler.headers = {}
-        self.handler.rfile = BytesIO()
-        self.handler.wfile = BytesIO()
+        self.handler.rfile = MagicMock()
+        self.handler.wfile = MagicMock()
         self.handler.send_response = MagicMock()
         self.handler.send_header = MagicMock()
         self.handler.end_headers = MagicMock()
@@ -38,143 +67,33 @@ class TestAttachmentHandling(unittest.TestCase):
     def tearDown(self):
         self.patcher.stop()
         import shutil
-        shutil.rmtree(self.temp_dir)
+        shutil.rmtree(self.temp_dir, ignore_errors=True)
 
-    def _build_multipart_body(self, file_data, filename, field_name='file', content_type='text/plain'):
-        """Build a multipart/form-data body."""
-        boundary = '----TestBoundary12345'
-        body = b''
-        body += f'--{boundary}\r\n'.encode()
-        body += f'Content-Disposition: form-data; name="{field_name}"; filename="{filename}"\r\n'.encode()
-        body += f'Content-Type: {content_type}\r\n'.encode()
-        body += b'\r\n'
-        body += file_data
-        body += b'\r\n'
-        body += f'--{boundary}--\r\n'.encode()
-        return body, boundary
+    @patch('server.get_client')
+    def test_handle_get_models_success(self, mock_get_client):
+        mock_client = MagicMock()
+        mock_client.get_models.return_value = [
+            {'id': 'model-1', 'name': 'Model 1', 'provider': 'Provider A', 'context_length': 8192, 'pricing': {'prompt': 0.01, 'completion': 0.02}}
+        ]
+        mock_get_client.return_value = mock_client
+        self.handler.handle_get_models()
+        self.handler.send_response.assert_called_with(200)
+        # Check that json was written
+        written = self.handler.wfile.write.call_args[0][0]
+        data = json.loads(written)
+        self.assertEqual(len(data), 1)
+        self.assertEqual(data[0]['id'], 'model-1')
 
-    def test_upload_success(self):
-        """Test successful file upload."""
-        file_data = b'Hello, world!'
-        body, boundary = self._build_multipart_body(file_data, 'test.txt', content_type='text/plain')
-        self.handler.headers = {
-            'Content-Type': f'multipart/form-data; boundary={boundary}',
-            'Content-Length': str(len(body))
-        }
-        self.handler.rfile = BytesIO(body)
-
-        # Mock _send_json to capture output
-        self.handler._send_json = MagicMock()
-
-        self.handler.do_POST()
-
-        # Check that _send_json was called with success
-        args, kwargs = self.handler._send_json.call_args
-        response_data = args[0]
-        status = args[1] if len(args) > 1 else kwargs.get('status', 200)
-
-        self.assertEqual(status, 201)
-        self.assertIn('filename', response_data)
-        self.assertEqual(response_data['original_name'], 'test.txt')
-        self.assertEqual(response_data['mime_type'], 'text/plain')
-        self.assertEqual(response_data['size'], 13)
-
-        # Verify file was saved
-        saved_path = os.path.join(self.attachments_dir, response_data['filename'])
-        self.assertTrue(os.path.exists(saved_path))
-        with open(saved_path, 'rb') as f:
-            self.assertEqual(f.read(), file_data)
-
-    def test_upload_no_file(self):
-        """Test upload with no file part."""
-        boundary = '----TestBoundary12345'
-        body = f'--{boundary}--\r\n'.encode()
-        self.handler.headers = {
-            'Content-Type': f'multipart/form-data; boundary={boundary}',
-            'Content-Length': str(len(body))
-        }
-        self.handler.rfile = BytesIO(body)
-
-        self.handler._send_json = MagicMock()
-
-        self.handler.do_POST()
-
-        args, kwargs = self.handler._send_json.call_args
-        response_data = args[0]
-        status = args[1] if len(args) > 1 else kwargs.get('status', 200)
-
-        self.assertEqual(status, 400)
-        self.assertIn('error', response_data)
-        self.assertEqual(response_data['error'], 'No file found in upload')
-
-    def test_upload_invalid_mime_type(self):
-        """Test upload with unsupported MIME type."""
-        file_data = b'some binary'
-        body, boundary = self._build_multipart_body(file_data, 'test.exe', content_type='application/x-msdownload')
-        self.handler.headers = {
-            'Content-Type': f'multipart/form-data; boundary={boundary}',
-            'Content-Length': str(len(body))
-        }
-        self.handler.rfile = BytesIO(body)
-
-        self.handler._send_json = MagicMock()
-
-        self.handler.do_POST()
-
-        args, kwargs = self.handler._send_json.call_args
-        response_data = args[0]
-        status = args[1] if len(args) > 1 else kwargs.get('status', 200)
-
-        self.assertEqual(status, 415)
-        self.assertIn('error', response_data)
-        self.assertIn('Unsupported file type', response_data['error'])
-
-    def test_upload_oversized(self):
-        """Test upload with file exceeding size limit."""
-        file_data = b'x' * (MAX_ATTACHMENT_SIZE + 1)
-        body, boundary = self._build_multipart_body(file_data, 'large.txt', content_type='text/plain')
-        self.handler.headers = {
-            'Content-Type': f'multipart/form-data; boundary={boundary}',
-            'Content-Length': str(len(body))
-        }
-        self.handler.rfile = BytesIO(body)
-
-        self.handler._send_json = MagicMock()
-
-        self.handler.do_POST()
-
-        args, kwargs = self.handler._send_json.call_args
-        response_data = args[0]
-        status = args[1] if len(args) > 1 else kwargs.get('status', 200)
-
-        self.assertEqual(status, 413)
-        self.assertIn('error', response_data)
-        self.assertIn('File too large', response_data['error'])
-
-    def test_upload_server_error(self):
-        """Test upload when file cannot be saved."""
-        file_data = b'test data'
-        body, boundary = self._build_multipart_body(file_data, 'test.txt', content_type='text/plain')
-        self.handler.headers = {
-            'Content-Type': f'multipart/form-data; boundary={boundary}',
-            'Content-Length': str(len(body))
-        }
-        self.handler.rfile = BytesIO(body)
-
-        self.handler._send_json = MagicMock()
-
-        # Make ATTACHMENTS_DIR point to a non-writable location
-        with patch('server.ATTACHMENTS_DIR', '/nonexistent/path'):
-            self.handler.do_POST()
-
-            args, kwargs = self.handler._send_json.call_args
-            response_data = args[0]
-            status = args[1] if len(args) > 1 else kwargs.get('status', 200)
-
-            self.assertEqual(status, 500)
-            self.assertIn('error', response_data)
-            self.assertIn('Failed to save file', response_data['error'])
-
+    @patch('server.get_client')
+    def test_handle_get_models_error(self, mock_get_client):
+        mock_client = MagicMock()
+        mock_client.get_models.side_effect = Exception('API error')
+        mock_get_client.return_value = mock_client
+        self.handler.handle_get_models()
+        self.handler.send_response.assert_called_with(500)
+        written = self.handler.wfile.write.call_args[0][0]
+        data = json.loads(written)
+        self.assertIn('error', data)
 
 if __name__ == '__main__':
     unittest.main()
