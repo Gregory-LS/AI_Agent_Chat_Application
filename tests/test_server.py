@@ -1,93 +1,88 @@
 import json
-import os
-import tempfile
-import unittest
+import pytest
 from unittest.mock import patch, MagicMock
-import sys
-sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
-# We'll test server logic by importing the module and testing functions directly
-import server
+# We'll test the handler methods directly
+from server import ChatHandler
 
-class TestServerFunctions(unittest.TestCase):
-    def setUp(self):
-        self.tempdir = tempfile.mkdtemp()
-        self.orig_data_dir = server.DATA_DIR
-        self.orig_config_file = server.CONFIG_FILE
-        self.orig_conversations_dir = server.CONVERSATIONS_DIR
-        self.orig_skills_file = server.SKILLS_FILE
-        self.orig_attachments_dir = server.ATTACHMENTS_DIR
-        server.DATA_DIR = self.tempdir
-        server.CONFIG_FILE = os.path.join(self.tempdir, "config.json")
-        server.CONVERSATIONS_DIR = os.path.join(self.tempdir, "conversations")
-        server.SKILLS_FILE = os.path.join(self.tempdir, "skills.json")
-        server.ATTACHMENTS_DIR = os.path.join(self.tempdir, "attachments")
-        os.makedirs(server.CONVERSATIONS_DIR, exist_ok=True)
-        os.makedirs(server.ATTACHMENTS_DIR, exist_ok=True)
-        with open(server.SKILLS_FILE, "w") as f:
-            json.dump([], f)
-        with open(server.CONFIG_FILE, "w") as f:
-            json.dump({"api_key": "", "default_model": ""}, f)
+class MockRequest:
+    def __init__(self, path='/'):
+        self.path = path
+        self.headers = {}
+        self.body = b''
+        self.method = 'GET'
 
-    def tearDown(self):
-        server.DATA_DIR = self.orig_data_dir
-        server.CONFIG_FILE = self.orig_config_file
-        server.CONVERSATIONS_DIR = self.orig_conversations_dir
-        server.SKILLS_FILE = self.orig_skills_file
-        server.ATTACHMENTS_DIR = self.orig_attachments_dir
-        import shutil
-        shutil.rmtree(self.tempdir)
+class MockResponse:
+    def __init__(self):
+        self.status = None
+        self.headers = {}
+        self.body = b''
 
-    def test_get_config_default(self):
-        cfg = server.get_config()
-        self.assertEqual(cfg["api_key"], "")
-        self.assertEqual(cfg["default_model"], "")
+class MockHandler(ChatHandler):
+    def __init__(self):
+        self.path = '/'
+        self.headers = {}
+        self.rfile = MagicMock()
+        self.wfile = MagicMock()
+        self.send_response = MagicMock()
+        self.send_header = MagicMock()
+        self.end_headers = MagicMock()
+        self.server = MagicMock()
+        self.request = MagicMock()
+        self.client_address = ('127.0.0.1', 12345)
+        self.command = 'GET'
+        self._send_json_called = False
+        self._send_json_status = None
+        self._send_json_data = None
 
-    def test_save_and_get_config(self):
-        server.save_config({"api_key": "test-key", "default_model": "model-x"})
-        cfg = server.get_config()
-        self.assertEqual(cfg["api_key"], "test-key")
-        self.assertEqual(cfg["default_model"], "model-x")
+    def _send_json(self, data, status=200):
+        self._send_json_called = True
+        self._send_json_status = status
+        self._send_json_data = data
 
-    def test_skills_empty(self):
-        skills = server.get_skills()
-        self.assertEqual(skills, [])
+    def send_error(self, code, message=None):
+        self._send_json({'error': message or 'Error'}, code)
 
-    def test_save_and_get_skills(self):
-        skills = [{"id": "1", "name": "test"}]
-        server.save_skills(skills)
-        self.assertEqual(server.get_skills(), skills)
+def test_get_models_success():
+    mock_models = [{'id': 'model1', 'name': 'Model 1'}]
+    with patch('openrouter.fetch_models', return_value=mock_models):
+        handler = MockHandler()
+        handler.handle_get_models()
+        assert handler._send_json_called
+        assert handler._send_json_status == 200
+        assert handler._send_json_data == {'models': mock_models}
 
-    def test_conversation_crud(self):
-        cid = "test-id"
-        conv = {"id": cid, "title": "Test", "messages": []}
-        server.save_conversation(cid, conv)
-        loaded = server.get_conversation(cid)
-        self.assertEqual(loaded["title"], "Test")
-        self.assertTrue(server.delete_conversation(cid))
-        self.assertIsNone(server.get_conversation(cid))
-        self.assertFalse(server.delete_conversation("nonexistent"))
+def test_get_models_empty():
+    with patch('openrouter.fetch_models', return_value=[]):
+        handler = MockHandler()
+        handler.handle_get_models()
+        assert handler._send_json_status == 200
+        assert handler._send_json_data == {'models': []}
 
-    def test_list_conversations(self):
-        server.save_conversation("a", {"id": "a", "title": "A", "created": "now", "updated": "now"})
-        server.save_conversation("b", {"id": "b", "title": "B", "created": "now", "updated": "now"})
-        convs = server.get_conversations()
-        self.assertEqual(len(convs), 2)
+def test_get_models_api_error():
+    with patch('openrouter.fetch_models', side_effect=Exception('API error')):
+        handler = MockHandler()
+        handler.handle_get_models()
+        assert handler._send_json_status == 500
+        assert 'error' in handler._send_json_data
 
-    def test_get_headers_no_key(self):
-        with patch.dict(os.environ, {}, clear=True):
-            headers = server.get_headers()
-            self.assertEqual(headers["Authorization"], "Bearer ")
+def test_get_models_server_error():
+    with patch('openrouter.fetch_models', side_effect=RuntimeError('Server failure')):
+        handler = MockHandler()
+        handler.handle_get_models()
+        assert handler._send_json_status == 500
+        assert 'error' in handler._send_json_data
 
-    def test_get_headers_env_key(self):
-        with patch.dict(os.environ, {"OPENROUTER_API_KEY": "env-key"}, clear=True):
-            headers = server.get_headers()
-            self.assertEqual(headers["Authorization"], "Bearer env-key")
+def test_do_get_models_routing():
+    handler = MockHandler()
+    handler.path = '/api/models'
+    with patch.object(handler, 'handle_get_models') as mock_handle:
+        handler.do_GET()
+        mock_handle.assert_called_once()
 
-    def test_get_headers_config_key(self):
-        server.save_config({"api_key": "cfg-key", "default_model": ""})
-        headers = server.get_headers()
-        self.assertEqual(headers["Authorization"], "Bearer cfg-key")
-
-if __name__ == "__main__":
-    unittest.main()
+def test_do_get_unknown_path():
+    handler = MockHandler()
+    handler.path = '/api/unknown'
+    with patch.object(handler, 'send_error') as mock_error:
+        handler.do_GET()
+        mock_error.assert_called_once_with(404)
