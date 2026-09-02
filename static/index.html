@@ -1,97 +1,62 @@
 <!DOCTYPE html>
 <html lang="en" data-theme="light">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Agentic Chat</title>
-  <link rel="stylesheet" href="/styles.css">
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Agentic Chat</title>
+<link rel="stylesheet" href="/styles.css">
 </head>
 <body>
-  <div id="app">
-    <!-- Sidebar -->
-    <aside id="sidebar" class="sidebar">
-      <div class="sidebar-header">
-        <button id="new-chat-btn" class="btn btn-primary" title="New conversation">+ New Chat</button>
-      </div>
-      <div class="sidebar-search">
-        <input type="text" id="search-input" placeholder="Search conversations..." />
-      </div>
-      <nav id="conversation-list" class="conversation-list"></nav>
-      <div class="sidebar-footer">
-        <button id="settings-btn" class="btn btn-ghost" title="Settings">Settings</button>
-        <button id="skills-btn" class="btn btn-ghost" title="Skills">Skills</button>
-      </div>
-    </aside>
+<div id="app">
+  <aside id="sidebar">
+    <div class="sidebar-header">
+      <button id="new-chat-btn" class="btn btn-primary">+ New Chat</button>
+      <input type="text" id="search-input" placeholder="Search conversations..." class="search-input">
+    </div>
+    <div id="conversation-list"></div>
+    <div class="sidebar-footer">
+      <button id="settings-btn" class="btn btn-icon" title="Settings">⚙️</button>
+      <button id="skills-btn" class="btn btn-icon" title="Skills">🧠</button>
+    </div>
+  </aside>
 
-    <!-- Main chat area -->
-    <main id="chat-area" class="chat-area">
-      <header id="chat-header" class="chat-header">
-        <span id="model-badge" class="model-badge"></span>
-        <div class="header-actions">
-          <button id="model-picker-btn" class="btn btn-ghost" title="Switch model">Model</button>
-          <button id="stop-btn" class="btn btn-ghost" title="Stop generation" style="display:none;">Stop</button>
-          <button id="copy-btn" class="btn btn-ghost" title="Copy last message">Copy</button>
-        </div>
-      </header>
-      <div id="messages" class="messages"></div>
-      <div id="composer" class="composer">
-        <textarea id="message-input" placeholder="Type a message..." rows="1"></textarea>
-        <div class="composer-actions">
-          <button id="attach-btn" class="btn btn-ghost" title="Attach file">📎</button>
-          <button id="send-btn" class="btn btn-primary" title="Send message">Send</button>
-        </div>
-      </div>
-    </main>
-
-    <!-- Drawers / Modals -->
-    <div id="settings-drawer" class="drawer" style="display:none;">
-      <div class="drawer-header">
-        <h2>Settings</h2>
-        <button id="close-settings-btn" class="btn btn-ghost">✕</button>
-      </div>
-      <div class="drawer-body">
-        <label>
-          API Key
-          <input type="password" id="api-key-input" placeholder="sk-or-..." />
-        </label>
-        <label>
-          Default Model
-          <select id="default-model-select"></select>
-        </label>
-        <label>
-          Theme
-          <button id="theme-toggle-btn" class="btn btn-ghost">Toggle Dark/Light</button>
-        </label>
-        <div class="balance-info">
-          <h3>Balance</h3>
-          <p id="balance-display">Loading...</p>
-        </div>
+  <main id="chat-area">
+    <div id="message-container"></div>
+    <div id="composer-area">
+      <textarea id="composer" placeholder="Type a message..." rows="3"></textarea>
+      <div class="composer-actions">
+        <button id="send-btn" class="btn btn-primary">Send</button>
+        <button id="stop-btn" class="btn btn-danger" style="display:none;">Stop</button>
       </div>
     </div>
+  </main>
 
-    <div id="skills-drawer" class="drawer" style="display:none;">
-      <div class="drawer-header">
-        <h2>Skills</h2>
-        <button id="close-skills-btn" class="btn btn-ghost">✕</button>
-      </div>
-      <div class="drawer-body">
-        <div id="skills-list"></div>
-        <button id="add-skill-btn" class="btn btn-primary">+ Add Skill</button>
-      </div>
+  <div id="settings-drawer" class="drawer">
+    <div class="drawer-header">
+      <h2>Settings</h2>
+      <button id="close-settings-btn" class="btn btn-icon">✕</button>
     </div>
-
-    <div id="model-picker-modal" class="modal" style="display:none;">
-      <div class="modal-content">
-        <div class="modal-header">
-          <h2>Select Model</h2>
-          <input type="text" id="model-search-input" placeholder="Search models..." />
-          <button id="close-model-picker-btn" class="btn btn-ghost">✕</button>
-        </div>
-        <div id="model-list" class="model-list"></div>
-      </div>
+    <div class="drawer-body">
+      <label for="api-key-input">API Key</label>
+      <input type="password" id="api-key-input" placeholder="sk-or-...">
+      <label for="default-model-select">Default Model</label>
+      <select id="default-model-select"></select>
+      <button id="theme-toggle" class="btn">Toggle Theme</button>
+      <div id="balance-info">Balance: —</div>
+      <button id="logout-btn" class="btn btn-danger">Logout</button>
     </div>
   </div>
 
-  <script src="/app.js"></script>
+  <div id="skills-drawer" class="drawer">
+    <div class="drawer-header">
+      <h2>Skills</h2>
+      <button id="close-skills-btn" class="btn btn-icon">✕</button>
+    </div>
+    <div class="drawer-body" id="skills-list">
+      <!-- Skills will be rendered here -->
+    </div>
+  </div>
+</div>
+<script src="/app.js"></script>
 </body>
 </html>
