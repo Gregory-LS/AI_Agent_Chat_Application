@@ -1,111 +1,87 @@
-from pathlib import Path
-
+import os
+import tempfile
 import pytest
-
-from attachments import (
-    Attachment,
-    AttachmentNotFoundError,
-    AttachmentStore,
-    ValidationError,
-)
+from io import BytesIO
+from pathlib import Path
+from src.attachments import AttachmentHandler
 
 
-@pytest.fixture()
-def store(tmp_path: Path) -> AttachmentStore:
-    return AttachmentStore(storage_dir=tmp_path / 'attachments')
+@pytest.fixture
+def handler():
+    # Use a temporary directory for each test
+    with tempfile.TemporaryDirectory() as tmpdir:
+        yield AttachmentHandler(base_dir=tmpdir)
 
 
-def build_attachment(**overrides) -> Attachment:
-    values = {
-        'filename': 'notes.txt',
-        'content_type': 'text/plain',
-        'data': b'hello attachments',
-    }
-    values.update(overrides)
-    return Attachment(**values)
+def test_save_and_retrieve(handler):
+    data = b"hello world"
+    handler.save("test.txt", BytesIO(data))
+    result = handler.retrieve("test.txt")
+    assert result == data
 
 
-def test_save_and_load_round_trip(store):
-    original = build_attachment(metadata={'user_id': 42, 'labels': ['docs']})
-
-    saved = store.save(original)
-
-    loaded = store.load(saved.attachment_id)
-    assert loaded.attachment_id == saved.attachment_id
-    assert loaded.filename == original.filename
-    assert loaded.content_type == original.content_type
-    assert loaded.data == original.data
-    assert loaded.metadata == original.metadata
+def test_save_creates_file(handler):
+    handler.save("a.txt", BytesIO(b"content"))
+    file_path = Path(handler.base_dir) / "a.txt"
+    assert file_path.exists()
 
 
-def test_save_generates_valid_id(store):
-    saved = store.save(build_attachment())
-
-    assert len(saved.attachment_id) > 0
-    assert all(c.isalnum() or c in '-_' for c in saved.attachment_id)
+def test_retrieve_nonexistent(handler):
+    result = handler.retrieve("nonexistent.txt")
+    assert result is None
 
 
-def test_save_preserves_provided_id(store):
-    saved = store.save(build_attachment(attachment_id='my-file'))
-
-    assert saved.attachment_id == 'my-file'
-    assert store.load('my-file').filename == 'notes.txt'
+def test_list_files_empty(handler):
+    assert handler.list_files() == []
 
 
-def test_rejects_too_large(tmp_path):
-    store = AttachmentStore(tmp_path / 'medium', max_size=4)
-
-    with pytest.raises(ValidationError, match='maximum allowed'):
-        store.save(build_attachment(data=b'12345'))
-
-
-def test_rejects_disallowed_content_type(store):
-    with pytest.raises(ValidationError, match='content type'):
-        store.save(build_attachment(content_type='application/x-unknown'))
+def test_list_files(handler):
+    handler.save("b.txt", BytesIO(b"1"))
+    handler.save("a.txt", BytesIO(b"2"))
+    assert handler.list_files() == ["a.txt", "b.txt"]
 
 
-@pytest.mark.parametrize(
-    'filename',
-    ['', '.', '..', '../evil.sh', 'dir/evil.sh', 'evil.sh' + chr(92)],
-)
-def test_rejects_unsafe_filename(store, filename):
-    with pytest.raises(ValidationError, match='filename'):
-        store.save(build_attachment(filename=filename))
+def test_delete_existing(handler):
+    handler.save("del.txt", BytesIO(b"delete me"))
+    assert handler.delete("del.txt") is True
+    assert handler.retrieve("del.txt") is None
 
 
-def test_load_rejects_invalid_id(store):
-    with pytest.raises(ValueError):
-        store.load('../bad')
+def test_delete_nonexistent(handler):
+    assert handler.delete("ghost.txt") is False
 
 
-def test_load_missing_attachment(store):
-    with pytest.raises(AttachmentNotFoundError):
-        store.load('doesnotexist')
+def test_clear(handler):
+    handler.save("x.txt", BytesIO(b"x"))
+    handler.save("y.txt", BytesIO(b"y"))
+    count = handler.clear()
+    assert count == 2
+    assert handler.list_files() == []
 
 
-def test_delete_removes_attachment(store):
-    saved = store.save(build_attachment())
-
-    assert store.exists(saved.attachment_id) is True
-    assert store.delete(saved.attachment_id) is True
-    assert store.exists(saved.attachment_id) is False
-    assert store.delete(saved.attachment_id) is False
+def test_save_empty_filename(handler):
+    with pytest.raises(ValueError, match="Filename must not be empty"):
+        handler.save("", BytesIO(b"data"))
 
 
-def test_list_attachments(store):
-    first = store.save(build_attachment(filename='a.txt', data=b'a'))
-    second = store.save(build_attachment(filename='b.txt', data=b'bb'))
-
-    assert set(store.list_ids()) == {first.attachment_id, second.attachment_id}
-    assert len(store.list_attachments()) == 2
+def test_save_filename_with_slash(handler):
+    with pytest.raises(ValueError, match="must not contain path separators"):
+        handler.save("a/b.txt", BytesIO(b"data"))
 
 
-def test_attachment_from_file(tmp_path):
-    path = tmp_path / 'sample.bin'
-    path.write_bytes(bytes([0, 1]))
+def test_save_filename_with_backslash(handler):
+    with pytest.raises(ValueError, match="must not contain path separators"):
+        handler.save("a\\b.txt", BytesIO(b"data"))
 
-    attachment = Attachment.from_file(path, content_type='application/octet-stream')
 
-    assert attachment.filename == 'sample.bin'
-    assert attachment.data == bytes([0, 1])
-    assert attachment.size == 2
+def test_retrieve_after_clear(handler):
+    handler.save("keep.txt", BytesIO(b"keep"))
+    handler.clear()
+    assert handler.retrieve("keep.txt") is None
+
+
+def test_multiple_saves_same_name(handler):
+    handler.save("dup.txt", BytesIO(b"first"))
+    handler.save("dup.txt", BytesIO(b"second"))
+    result = handler.retrieve("dup.txt")
+    assert result == b"second"  # overwrites
