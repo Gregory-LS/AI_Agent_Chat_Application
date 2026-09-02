@@ -4,6 +4,7 @@ A Claude-style chat application powered by OpenRouter. Chat with hundreds of mod
 
 ## Features
 
+- **Authentication** — user registration and login system with session management
 - **Chat** — stream responses, stop mid-stream, copy messages, message metadata
 - **Model picker** — browse all OpenRouter models, grouped by provider, searchable, with context/pricing info
 - **Skills** — enable/disable built-in skills or create your own custom system prompts
@@ -20,16 +21,16 @@ set OPENROUTER_API_KEY=sk-or-...
 python server.py
 ```
 
-Open http://localhost:8000 in your browser.
+Open http://localhost:8000 in your browser. You will be prompted to register or log in.
 
-The `data/` directory (config, conversations, skills, attachments) is created automatically on first run.
+The `data/` directory (config, conversations, skills, attachments, users) is created automatically on first run.
 
 ## Configuration
 
 | Variable | Default | Description |
 |---|---|---|
 | `OPENROUTER_API_KEY` | — | Your OpenRouter API key (required) |
-| `HOST` | `0.0.0.0` | Server bind address |
+| `HOST` | `[IP_ADDRESS]` | Server bind address |
 | `PORT` | `8000` | Server port |
 
 The API key can also be set via the Settings UI (persisted to `data/config.json`).
@@ -47,6 +48,7 @@ The API key can also be set via the Settings UI (persisted to `data/config.json`
 │   ├── config.json        # API key, default model
 │   ├── conversations/     # Per-conversation JSON files
 │   ├── skills.json        # Custom skills
+│   ├── users.json         # User accounts (hashed passwords)
 │   └── attachments/       # Uploaded images
 ├── tests/
 │   ├── test_app.html
@@ -58,6 +60,17 @@ The API key can also be set via the Settings UI (persisted to `data/config.json`
 ```
 
 ## API endpoints
+
+### Authentication
+
+| Method | Path | Description |
+|---|---|---|
+| POST | `/api/auth/register` | Register a new user |
+| POST | `/api/auth/login` | Login and receive session token |
+| POST | `/api/auth/logout` | Invalidate session |
+| GET | `/api/auth/check` | Check if session is valid |
+
+### Chat & Data
 
 | Method | Path | Description |
 |---|---|---|
@@ -72,6 +85,8 @@ The API key can also be set via the Settings UI (persisted to `data/config.json`
 | PATCH/DELETE | `/api/skills/:id` | Update/delete skill |
 | POST | `/api/attachments` | Upload an attachment |
 | POST | `/api/chat` | Stream a chat response (SSE) — see below |
+
+All endpoints except `/api/auth/*` require a valid session token in the `Authorization` header as `Bearer <token>`.
 
 The `/api/chat` endpoint returns a Server-Sent Events (SSE) stream. Each event has type `chunk` (partial content), `done` (final), `error` (failure), or `usage` (token usage).
 

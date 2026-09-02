@@ -1,41 +1,91 @@
-import http.server
-import json
 import os
-import urllib.parse
+import json
+import hashlib
+import secrets
+import threading
 import uuid
+import mimetypes
 import shutil
-import io
-import base64
-from datetime import datetime
+import re
+from http.server import HTTPServer, BaseHTTPRequestHandler
+from urllib.parse import urlparse, parse_qs
 import httpx
 
+# --- Configuration ---
 DATA_DIR = "data"
 CONFIG_FILE = os.path.join(DATA_DIR, "config.json")
 CONVERSATIONS_DIR = os.path.join(DATA_DIR, "conversations")
 SKILLS_FILE = os.path.join(DATA_DIR, "skills.json")
 ATTACHMENTS_DIR = os.path.join(DATA_DIR, "attachments")
+USERS_FILE = os.path.join(DATA_DIR, "users.json")
 
+OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY", "")
+HOST = os.environ.get("HOST", "0.0.0.0")
+PORT = int(os.environ.get("PORT", 8000))
+
+# Ensure data directories exist
 os.makedirs(DATA_DIR, exist_ok=True)
 os.makedirs(CONVERSATIONS_DIR, exist_ok=True)
 os.makedirs(ATTACHMENTS_DIR, exist_ok=True)
-if not os.path.exists(SKILLS_FILE):
-    with open(SKILLS_FILE, "w") as f:
-        json.dump([], f)
-if not os.path.exists(CONFIG_FILE):
-    with open(CONFIG_FILE, "w") as f:
-        json.dump({"api_key": "", "default_model": ""}, f)
 
-OPENROUTER_BASE = "https://openrouter.ai/api/v1"
+# --- User management ---
+users_lock = threading.Lock()
+sessions = {}  # token -> username
 
-def get_config():
+def load_users():
+    if not os.path.exists(USERS_FILE):
+        return {}
+    with open(USERS_FILE, "r") as f:
+        return json.load(f)
+
+def save_users(users):
+    with open(USERS_FILE, "w") as f:
+        json.dump(users, f, indent=2)
+
+def hash_password(password):
+    return hashlib.sha256(password.encode()).hexdigest()
+
+def create_user(username, password):
+    with users_lock:
+        users = load_users()
+        if username in users:
+            return False, "Username already exists"
+        users[username] = {"password": hash_password(password)}
+        save_users(users)
+        return True, "User created"
+
+def authenticate(username, password):
+    with users_lock:
+        users = load_users()
+        user = users.get(username)
+        if user and user["password"] == hash_password(password):
+            token = secrets.token_hex(32)
+            sessions[token] = username
+            return True, token
+        return False, None
+
+def validate_session(token):
+    return sessions.get(token)
+
+def logout(token):
+    if token in sessions:
+        del sessions[token]
+
+# --- Config management ---
+def load_config():
+    if not os.path.exists(CONFIG_FILE):
+        return {"api_key": OPENROUTER_API_KEY, "default_model": "openai/gpt-4o"}
     with open(CONFIG_FILE, "r") as f:
         return json.load(f)
 
-def save_config(cfg):
+def save_config(config):
     with open(CONFIG_FILE, "w") as f:
-        json.dump(cfg, f, indent=2)
+        json.dump(config, f, indent=2)
 
-def get_skills():
+# --- Skills management ---
+def load_skills():
+    if not os.path.exists(SKILLS_FILE):
+        return []
     with open(SKILLS_FILE, "r") as f:
         return json.load(f)
 
@@ -43,434 +93,468 @@ def save_skills(skills):
     with open(SKILLS_FILE, "w") as f:
         json.dump(skills, f, indent=2)
 
-def get_conversations():
+# --- Conversation management ---
+def list_conversations():
     convs = []
     for fname in os.listdir(CONVERSATIONS_DIR):
         if fname.endswith(".json"):
+            conv_id = fname[:-5]
             with open(os.path.join(CONVERSATIONS_DIR, fname), "r") as f:
-                convs.append(json.load(f))
+                data = json.load(f)
+            convs.append({"id": conv_id, "title": data.get("title", "New conversation"), "updated_at": data.get("updated_at", "")})
+    convs.sort(key=lambda x: x.get("updated_at", ""), reverse=True)
     return convs
 
-def get_conversation(cid):
-    path = os.path.join(CONVERSATIONS_DIR, f"{cid}.json")
-    if os.path.exists(path):
-        with open(path, "r") as f:
-            return json.load(f)
-    return None
+def get_conversation(conv_id):
+    path = os.path.join(CONVERSATIONS_DIR, f"{conv_id}.json")
+    if not os.path.exists(path):
+        return None
+    with open(path, "r") as f:
+        return json.load(f)
 
-def save_conversation(cid, data):
-    path = os.path.join(CONVERSATIONS_DIR, f"{cid}.json")
+def save_conversation(conv_id, data):
+    path = os.path.join(CONVERSATIONS_DIR, f"{conv_id}.json")
     with open(path, "w") as f:
         json.dump(data, f, indent=2)
 
-def delete_conversation(cid):
-    path = os.path.join(CONVERSATIONS_DIR, f"{cid}.json")
+def delete_conversation(conv_id):
+    path = os.path.join(CONVERSATIONS_DIR, f"{conv_id}.json")
     if os.path.exists(path):
         os.remove(path)
-        return True
-    return False
 
-def get_headers():
-    cfg = get_config()
-    api_key = cfg.get("api_key", "") or os.environ.get("OPENROUTER_API_KEY", "")
-    return {
-        "Authorization": f"Bearer {api_key}",
-        "Content-Type": "application/json",
-    }
+# --- OpenRouter client ---
+openrouter_client = None
+def get_openrouter_client():
+    global openrouter_client
+    if openrouter_client is None:
+        openrouter_client = OpenRouterClient()
+    return openrouter_client
 
-class ChatHandler(http.server.BaseHTTPRequestHandler):
-    def do_OPTIONS(self):
-        self.send_response(200)
-        self.send_cors_headers()
-        self.end_headers()
-
-    def do_GET(self):
-        parsed = urllib.parse.urlparse(self.path)
-        path = parsed.path
-        query = urllib.parse.parse_qs(parsed.query)
-
-        if path == "/api/models":
-            self.handle_models()
-        elif path == "/api/balance":
-            self.handle_balance()
-        elif path == "/api/config":
-            self.handle_get_config()
-        elif path == "/api/conversations":
-            self.handle_list_conversations()
-        elif path.startswith("/api/conversations/") and path.endswith("/export"):
-            parts = path.split("/")
-            cid = parts[3]
-            fmt = query.get("format", ["json"])[0]
-            self.handle_export_conversation(cid, fmt)
-        elif path.startswith("/api/conversations/"):
-            cid = path.split("/")[3]
-            self.handle_get_conversation(cid)
-        elif path == "/api/skills":
-            self.handle_list_skills()
-        elif path.startswith("/api/skills/"):
-            sid = path.split("/")[3]
-            self.handle_get_skill(sid)
-        elif path.startswith("/static/") or path == "/":
-            self.serve_static(path)
-        else:
-            self.send_json({"error": "Not found"}, 404)
-
-    def do_POST(self):
-        parsed = urllib.parse.urlparse(self.path)
-        path = parsed.path
-
-        if path == "/api/config":
-            self.handle_update_config()
-        elif path == "/api/conversations":
-            self.handle_create_conversation()
-        elif path == "/api/conversations/import":
-            self.handle_import_conversation()
-        elif path == "/api/skills":
-            self.handle_create_skill()
-        elif path == "/api/attachments":
-            self.handle_upload_attachment()
-        elif path == "/api/chat":
-            self.handle_chat()
-        else:
-            self.send_json({"error": "Not found"}, 404)
-
-    def do_PUT(self):
-        parsed = urllib.parse.urlparse(self.path)
-        path = parsed.path
-
-        if path == "/api/config":
-            self.handle_update_config()
-        else:
-            self.send_json({"error": "Not found"}, 404)
-
-    def do_PATCH(self):
-        parsed = urllib.parse.urlparse(self.path)
-        path = parsed.path
-
-        if path.startswith("/api/conversations/"):
-            cid = path.split("/")[3]
-            self.handle_update_conversation(cid)
-        elif path.startswith("/api/skills/"):
-            sid = path.split("/")[3]
-            self.handle_update_skill(sid)
-        else:
-            self.send_json({"error": "Not found"}, 404)
-
-    def do_DELETE(self):
-        parsed = urllib.parse.urlparse(self.path)
-        path = parsed.path
-
-        if path.startswith("/api/conversations/"):
-            cid = path.split("/")[3]
-            self.handle_delete_conversation(cid)
-        elif path.startswith("/api/skills/"):
-            sid = path.split("/")[3]
-            self.handle_delete_skill(sid)
-        else:
-            self.send_json({"error": "Not found"}, 404)
-
-    def send_cors_headers(self):
-        self.send_header("Access-Control-Allow-Origin", "*")
-        self.send_header("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
-        self.send_header("Access-Control-Allow-Headers", "Content-Type")
-
-    def send_json(self, data, status=200):
-        self.send_response(status)
-        self.send_cors_headers()
-        self.send_header("Content-Type", "application/json")
-        self.end_headers()
-        self.wfile.write(json.dumps(data).encode())
-
-    def read_body(self):
-        length = int(self.headers.get("Content-Length", 0))
-        if length > 0:
-            return json.loads(self.rfile.read(length))
-        return {}
-
-    # --- API handlers ---
-
-    def handle_models(self):
-        headers = get_headers()
-        if not headers["Authorization"]:
-            self.send_json({"error": "API key not configured"}, 400)
-            return
-        try:
-            resp = httpx.get(f"{OPENROUTER_BASE}/models", headers=headers, timeout=10)
-            if resp.status_code == 200:
-                self.send_json(resp.json())
-            else:
-                self.send_json({"error": "Failed to fetch models"}, resp.status_code)
-        except Exception as e:
-            self.send_json({"error": str(e)}, 500)
-
-    def handle_balance(self):
-        headers = get_headers()
-        if not headers["Authorization"]:
-            self.send_json({"error": "API key not configured"}, 400)
-            return
-        try:
-            resp = httpx.get(f"{OPENROUTER_BASE}/auth/key", headers=headers, timeout=10)
-            if resp.status_code == 200:
-                self.send_json(resp.json())
-            else:
-                self.send_json({"error": "Failed to fetch balance"}, resp.status_code)
-        except Exception as e:
-            self.send_json({"error": str(e)}, 500)
-
-    def handle_get_config(self):
-        self.send_json(get_config())
-
-    def handle_update_config(self):
-        cfg = self.read_body()
-        existing = get_config()
-        existing.update(cfg)
-        save_config(existing)
-        self.send_json(existing)
-
-    def handle_list_conversations(self):
-        convs = get_conversations()
-        # Return only metadata (not full messages) for listing
-        meta = []
-        for c in convs:
-            meta.append({"id": c.get("id"), "title": c.get("title", ""), "created": c.get("created", ""), "updated": c.get("updated", "")})
-        self.send_json(meta)
-
-    def handle_create_conversation(self):
-        data = self.read_body()
-        cid = str(uuid.uuid4())
-        now = datetime.utcnow().isoformat()
-        conv = {
-            "id": cid,
-            "title": data.get("title", "New conversation"),
-            "created": now,
-            "updated": now,
-            "messages": [],
+class OpenRouterClient:
+    BASE_URL = "https://openrouter.ai/api/v1"
+    
+    def __init__(self):
+        self.api_key = None
+    
+    def update_api_key(self, api_key):
+        self.api_key = api_key
+    
+    def _headers(self):
+        return {
+            "Authorization": f"Bearer {self.api_key}",
+            "Content-Type": "application/json",
+            "HTTP-Referer": "http://localhost:8000",
+            "X-Title": "Agentic Chat"
         }
-        save_conversation(cid, conv)
-        self.send_json(conv, 201)
-
-    def handle_get_conversation(self, cid):
-        conv = get_conversation(cid)
-        if conv:
-            self.send_json(conv)
-        else:
-            self.send_json({"error": "Not found"}, 404)
-
-    def handle_update_conversation(self, cid):
-        conv = get_conversation(cid)
-        if not conv:
-            self.send_json({"error": "Not found"}, 404)
-            return
-        data = self.read_body()
-        conv.update(data)
-        conv["updated"] = datetime.utcnow().isoformat()
-        save_conversation(cid, conv)
-        self.send_json(conv)
-
-    def handle_delete_conversation(self, cid):
-        if delete_conversation(cid):
-            self.send_json({"status": "deleted"})
-        else:
-            self.send_json({"error": "Not found"}, 404)
-
-    def handle_export_conversation(self, cid, fmt):
-        conv = get_conversation(cid)
-        if not conv:
-            self.send_json({"error": "Not found"}, 404)
-            return
-        if fmt == "markdown":
-            md = f"# {conv.get('title', 'Conversation')}\n\n"
-            for msg in conv.get("messages", []):
-                role = msg.get("role", "unknown")
-                content = msg.get("content", "")
-                md += f"**{role.capitalize()}:** {content}\n\n"
-            self.send_response(200)
-            self.send_cors_headers()
-            self.send_header("Content-Type", "text/markdown")
-            self.send_header("Content-Disposition", f'attachment; filename="{cid}.md"')
-            self.end_headers()
-            self.wfile.write(md.encode())
-        else:
-            self.send_json(conv)
-
-    def handle_import_conversation(self):
-        data = self.read_body()
-        if "id" not in data:
-            data["id"] = str(uuid.uuid4())
-        cid = data["id"]
-        now = datetime.utcnow().isoformat()
-        if "created" not in data:
-            data["created"] = now
-        data["updated"] = now
-        save_conversation(cid, data)
-        self.send_json(data, 201)
-
-    def handle_list_skills(self):
-        self.send_json(get_skills())
-
-    def handle_get_skill(self, sid):
-        skills = get_skills()
-        for s in skills:
-            if s.get("id") == sid:
-                self.send_json(s)
-                return
-        self.send_json({"error": "Not found"}, 404)
-
-    def handle_create_skill(self):
-        data = self.read_body()
-        sid = str(uuid.uuid4())
-        now = datetime.utcnow().isoformat()
-        skill = {
-            "id": sid,
-            "name": data.get("name", "New skill"),
-            "prompt": data.get("prompt", ""),
-            "created": now,
-            "updated": now,
-        }
-        skills = get_skills()
-        skills.append(skill)
-        save_skills(skills)
-        self.send_json(skill, 201)
-
-    def handle_update_skill(self, sid):
-        skills = get_skills()
-        for i, s in enumerate(skills):
-            if s.get("id") == sid:
-                data = self.read_body()
-                s.update(data)
-                s["updated"] = datetime.utcnow().isoformat()
-                skills[i] = s
-                save_skills(skills)
-                self.send_json(s)
-                return
-        self.send_json({"error": "Not found"}, 404)
-
-    def handle_delete_skill(self, sid):
-        skills = get_skills()
-        for i, s in enumerate(skills):
-            if s.get("id") == sid:
-                del skills[i]
-                save_skills(skills)
-                self.send_json({"status": "deleted"})
-                return
-        self.send_json({"error": "Not found"}, 404)
-
-    def handle_upload_attachment(self):
-        length = int(self.headers.get("Content-Length", 0))
-        if length == 0:
-            self.send_json({"error": "No file provided"}, 400)
-            return
-        # Read raw multipart or binary; for simplicity, expect base64 JSON
-        data = self.read_body()
-        filename = data.get("filename", "attachment")
-        content_b64 = data.get("content", "")
-        if not content_b64:
-            self.send_json({"error": "No content"}, 400)
-            return
-        try:
-            content = base64.b64decode(content_b64)
-        except:
-            self.send_json({"error": "Invalid base64"}, 400)
-            return
-        ext = os.path.splitext(filename)[1] or ".bin"
-        aid = str(uuid.uuid4()) + ext
-        path = os.path.join(ATTACHMENTS_DIR, aid)
-        with open(path, "wb") as f:
-            f.write(content)
-        self.send_json({"id": aid, "filename": filename, "path": path}, 201)
-
-    def handle_chat(self):
-        data = self.read_body()
-        model = data.get("model", "")
-        messages = data.get("messages", [])
-        stream = data.get("stream", True)
-
-        headers = get_headers()
-        if not headers["Authorization"]:
-            self.send_json({"error": "API key not configured"}, 400)
-            return
-
-        payload = {
+    
+    async def list_models(self):
+        async with httpx.AsyncClient() as client:
+            resp = await client.get(f"{self.BASE_URL}/models", headers=self._headers())
+            resp.raise_for_status()
+            return resp.json()
+    
+    async def get_balance(self):
+        async with httpx.AsyncClient() as client:
+            resp = await client.get(f"{self.BASE_URL}/credits", headers=self._headers())
+            resp.raise_for_status()
+            return resp.json()
+    
+    async def chat_stream(self, model, messages, **kwargs):
+        body = {
             "model": model,
             "messages": messages,
-            "stream": stream,
+            "stream": True,
+            **kwargs
         }
+        async with httpx.AsyncClient() as client:
+            async with client.stream("POST", f"{self.BASE_URL}/chat/completions", json=body, headers=self._headers()) as resp:
+                resp.raise_for_status()
+                async for line in resp.aiter_lines():
+                    if line.startswith("data: "):
+                        yield line[6:]
 
-        self.send_response(200)
-        self.send_cors_headers()
-        self.send_header("Content-Type", "text/event-stream")
-        self.send_header("Cache-Control", "no-cache")
-        self.send_header("Connection", "keep-alive")
+# --- Request handler ---
+class Handler(BaseHTTPRequestHandler):
+    def _send_json(self, data, status=200):
+        self.send_response(status)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Access-Control-Allow-Origin", "*")
         self.end_headers()
-
-        try:
-            with httpx.Client(timeout=30) as client:
-                with client.stream("POST", f"{OPENROUTER_BASE}/chat/completions", json=payload, headers=headers) as resp:
-                    if resp.status_code != 200:
-                        error_body = resp.read().decode()
-                        self.wfile.write(f"event: error\ndata: {json.dumps({'error': error_body})}\n\n".encode())
-                        self.wfile.flush()
-                        return
-                    for line in resp.iter_lines():
-                        if line.startswith("data: "):
-                            data_str = line[6:]
-                            if data_str.strip() == "[DONE]":
-                                self.wfile.write("event: done\ndata: {}\n\n".encode())
-                                self.wfile.flush()
-                                break
-                            try:
-                                chunk = json.loads(data_str)
-                                choices = chunk.get("choices", [])
-                                if choices:
-                                    delta = choices[0].get("delta", {})
-                                    content = delta.get("content", "")
-                                    if content:
-                                        self.wfile.write(f"event: chunk\ndata: {json.dumps({'content': content})}\n\n".encode())
-                                        self.wfile.flush()
-                                if "usage" in chunk:
-                                    self.wfile.write(f"event: usage\ndata: {json.dumps(chunk['usage'])}\n\n".encode())
-                                    self.wfile.flush()
-                            except json.JSONDecodeError:
-                                pass
-        except Exception as e:
-            self.wfile.write(f"event: error\ndata: {json.dumps({'error': str(e)})}\n\n".encode())
-            self.wfile.flush()
-
-    def serve_static(self, path):
-        if path == "/":
-            path = "/static/index.html"
-        # Remove leading /static/
-        file_path = path.lstrip("/")
-        if file_path.startswith("static/"):
-            file_path = file_path[7:]
-        full_path = os.path.join("static", file_path)
-        if not os.path.exists(full_path) or os.path.isdir(full_path):
-            self.send_json({"error": "Not found"}, 404)
+        self.wfile.write(json.dumps(data).encode())
+    
+    def _send_error(self, message, status=400):
+        self._send_json({"error": message}, status)
+    
+    def _read_body(self):
+        length = int(self.headers.get("Content-Length", 0))
+        if length == 0:
+            return b""
+        return self.rfile.read(length)
+    
+    def _parse_path(self):
+        parsed = urlparse(self.path)
+        path = parsed.path
+        query = parse_qs(parsed.query)
+        return path, query
+    
+    def _get_session_token(self):
+        auth = self.headers.get("Authorization", "")
+        if auth.startswith("Bearer "):
+            return auth[7:]
+        return None
+    
+    def _require_auth(self):
+        token = self._get_session_token()
+        username = validate_session(token)
+        if not username:
+            self._send_error("Unauthorized", 401)
+            return None
+        return username
+    
+    def do_OPTIONS(self):
+        self.send_response(200)
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
+        self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization")
+        self.end_headers()
+    
+    def do_GET(self):
+        path, query = self._parse_path()
+        
+        # Auth endpoints
+        if path == "/api/auth/check":
+            token = self._get_session_token()
+            username = validate_session(token)
+            if username:
+                self._send_json({"authenticated": True, "username": username})
+            else:
+                self._send_json({"authenticated": False}, 401)
             return
-        ext = os.path.splitext(full_path)[1]
-        mime_map = {
-            ".html": "text/html",
-            ".css": "text/css",
-            ".js": "application/javascript",
-            ".json": "application/json",
-            ".png": "image/png",
-            ".jpg": "image/jpeg",
-            ".jpeg": "image/jpeg",
-            ".gif": "image/gif",
-            ".svg": "image/svg+xml",
-            ".ico": "image/x-icon",
-        }
-        mime = mime_map.get(ext, "application/octet-stream")
-        self.send_response(200)
-        self.send_cors_headers()
-        self.send_header("Content-Type", mime)
-        self.end_headers()
-        with open(full_path, "rb") as f:
-            shutil.copyfileobj(f, self.wfile)
+        
+        # Protected endpoints
+        if path.startswith("/api/"):
+            username = self._require_auth()
+            if not username:
+                return
+        
+        if path == "/api/models":
+            config = load_config()
+            api_key = config.get("api_key", "")
+            if not api_key:
+                self._send_error("API key not configured", 400)
+                return
+            client = get_openrouter_client()
+            client.update_api_key(api_key)
+            import asyncio
+            loop = asyncio.new_event_loop()
+            try:
+                models = loop.run_until_complete(client.list_models())
+                self._send_json(models)
+            except Exception as e:
+                self._send_error(str(e), 500)
+            finally:
+                loop.close()
+        elif path == "/api/balance":
+            config = load_config()
+            api_key = config.get("api_key", "")
+            if not api_key:
+                self._send_error("API key not configured", 400)
+                return
+            client = get_openrouter_client()
+            client.update_api_key(api_key)
+            import asyncio
+            loop = asyncio.new_event_loop()
+            try:
+                balance = loop.run_until_complete(client.get_balance())
+                self._send_json(balance)
+            except Exception as e:
+                self._send_error(str(e), 500)
+            finally:
+                loop.close()
+        elif path == "/api/config":
+            self._send_json(load_config())
+        elif path == "/api/conversations":
+            self._send_json(list_conversations())
+        elif path.startswith("/api/conversations/") and path.endswith("/export"):
+            conv_id = path.split("/")[3]
+            conv = get_conversation(conv_id)
+            if not conv:
+                self._send_error("Conversation not found", 404)
+                return
+            fmt = query.get("format", ["json"])[0]
+            if fmt == "markdown":
+                md = self._conv_to_markdown(conv)
+                self.send_response(200)
+                self.send_header("Content-Type", "text/markdown")
+                self.send_header("Access-Control-Allow-Origin", "*")
+                self.end_headers()
+                self.wfile.write(md.encode())
+            else:
+                self._send_json(conv)
+        elif re.match(r"^/api/conversations/[a-f0-9-]+$", path):
+            conv_id = path.split("/")[3]
+            conv = get_conversation(conv_id)
+            if not conv:
+                self._send_error("Conversation not found", 404)
+                return
+            self._send_json(conv)
+        elif path == "/api/skills":
+            self._send_json(load_skills())
+        elif re.match(r"^/api/skills/[a-f0-9-]+$", path):
+            skill_id = path.split("/")[3]
+            skills = load_skills()
+            skill = next((s for s in skills if s["id"] == skill_id), None)
+            if not skill:
+                self._send_error("Skill not found", 404)
+                return
+            self._send_json(skill)
+        elif path.startswith("/static/") or path == "/" or path == "":
+            self._serve_static(path)
+        else:
+            self._send_error("Not found", 404)
+    
+    def do_POST(self):
+        path, query = self._parse_path()
+        
+        # Auth endpoints
+        if path == "/api/auth/register":
+            body = json.loads(self._read_body())
+            username = body.get("username", "").strip()
+            password = body.get("password", "")
+            if not username or not password:
+                self._send_error("Username and password required")
+                return
+            success, msg = create_user(username, password)
+            if success:
+                self._send_json({"message": msg}, 201)
+            else:
+                self._send_error(msg, 409)
+            return
+        
+        if path == "/api/auth/login":
+            body = json.loads(self._read_body())
+            username = body.get("username", "").strip()
+            password = body.get("password", "")
+            if not username or not password:
+                self._send_error("Username and password required")
+                return
+            success, token = authenticate(username, password)
+            if success:
+                self._send_json({"token": token, "username": username})
+            else:
+                self._send_error("Invalid credentials", 401)
+            return
+        
+        if path == "/api/auth/logout":
+            token = self._get_session_token()
+            logout(token)
+            self._send_json({"message": "Logged out"})
+            return
+        
+        # Protected endpoints
+        username = self._require_auth()
+        if not username:
+            return
+        
+        if path == "/api/config":
+            config = load_config()
+            body = json.loads(self._read_body())
+            config.update(body)
+            save_config(config)
+            self._send_json(config)
+        elif path == "/api/conversations":
+            body = json.loads(self._read_body())
+            conv_id = str(uuid.uuid4())
+            conv = {
+                "id": conv_id,
+                "title": body.get("title", "New conversation"),
+                "messages": [],
+                "created_at": body.get("created_at", ""),
+                "updated_at": body.get("updated_at", ""),
+                "model": body.get("model", "openai/gpt-4o")
+            }
+            save_conversation(conv_id, conv)
+            self._send_json(conv, 201)
+        elif path == "/api/conversations/import":
+            body = json.loads(self._read_body())
+            conv_id = body.get("id", str(uuid.uuid4()))
+            save_conversation(conv_id, body)
+            self._send_json(body, 201)
+        elif path == "/api/skills":
+            body = json.loads(self._read_body())
+            skills = load_skills()
+            skill = {
+                "id": str(uuid.uuid4()),
+                "name": body.get("name", "Unnamed skill"),
+                "prompt": body.get("prompt", ""),
+                "enabled": body.get("enabled", True)
+            }
+            skills.append(skill)
+            save_skills(skills)
+            self._send_json(skill, 201)
+        elif path == "/api/attachments":
+            # Parse multipart form data
+            content_type = self.headers.get("Content-Type", "")
+            if "multipart/form-data" not in content_type:
+                self._send_error("Expected multipart/form-data")
+                return
+            boundary = content_type.split("boundary=")[1].strip()
+            body = self._read_body()
+            # Simple multipart parser
+            parts = body.split(b"--" + boundary.encode())
+            for part in parts:
+                if b"Content-Disposition" not in part:
+                    continue
+                headers_part, _, data = part.partition(b"\r\n\r\n")
+                data = data.rstrip(b"\r\n--")
+                disposition = headers_part.decode()
+                if 'name="file"' in disposition:
+                    filename = ""
+                    for line in disposition.split("\r\n"):
+                        if "filename=" in line:
+                            filename = line.split("filename=")[1].strip('"')
+                    if not filename:
+                        filename = "upload"
+                    file_id = str(uuid.uuid4())
+                    ext = os.path.splitext(filename)[1]
+                    stored_name = f"{file_id}{ext}"
+                    path = os.path.join(ATTACHMENTS_DIR, stored_name)
+                    with open(path, "wb") as f:
+                        f.write(data)
+                    self._send_json({"id": file_id, "filename": filename, "stored_name": stored_name, "size": len(data)}, 201)
+                    return
+            self._send_error("No file found")
+        elif path == "/api/chat":
+            body = json.loads(self._read_body())
+            model = body.get("model", "openai/gpt-4o")
+            messages = body.get("messages", [])
+            config = load_config()
+            api_key = config.get("api_key", "")
+            if not api_key:
+                self._send_error("API key not configured", 400)
+                return
+            client = get_openrouter_client()
+            client.update_api_key(api_key)
+            self.send_response(200)
+            self.send_header("Content-Type", "text/event-stream")
+            self.send_header("Cache-Control", "no-cache")
+            self.send_header("Access-Control-Allow-Origin", "*")
+            self.end_headers()
+            import asyncio
+            loop = asyncio.new_event_loop()
+            try:
+                async def stream():
+                    async for data in client.chat_stream(model, messages):
+                        self.wfile.write(f"data: {data}\n\n".encode())
+                        self.wfile.flush()
+                    self.wfile.write(b"data: [DONE]\n\n")
+                    self.wfile.flush()
+                loop.run_until_complete(stream())
+            except Exception as e:
+                self.wfile.write(f"data: {{\"error\": \"{str(e)}\"}}\n\n".encode())
+                self.wfile.flush()
+            finally:
+                loop.close()
+        else:
+            self._send_error("Not found", 404)
+    
+    def do_PUT(self):
+        path, query = self._parse_path()
+        username = self._require_auth()
+        if not username:
+            return
+        if path == "/api/config":
+            config = load_config()
+            body = json.loads(self._read_body())
+            config.update(body)
+            save_config(config)
+            self._send_json(config)
+        else:
+            self._send_error("Not found", 404)
+    
+    def do_PATCH(self):
+        path, query = self._parse_path()
+        username = self._require_auth()
+        if not username:
+            return
+        if re.match(r"^/api/conversations/[a-f0-9-]+$", path):
+            conv_id = path.split("/")[3]
+            conv = get_conversation(conv_id)
+            if not conv:
+                self._send_error("Conversation not found", 404)
+                return
+            body = json.loads(self._read_body())
+            conv.update(body)
+            save_conversation(conv_id, conv)
+            self._send_json(conv)
+        elif re.match(r"^/api/skills/[a-f0-9-]+$", path):
+            skill_id = path.split("/")[3]
+            skills = load_skills()
+            skill = next((s for s in skills if s["id"] == skill_id), None)
+            if not skill:
+                self._send_error("Skill not found", 404)
+                return
+            body = json.loads(self._read_body())
+            skill.update(body)
+            save_skills(skills)
+            self._send_json(skill)
+        else:
+            self._send_error("Not found", 404)
+    
+    def do_DELETE(self):
+        path, query = self._parse_path()
+        username = self._require_auth()
+        if not username:
+            return
+        if re.match(r"^/api/conversations/[a-f0-9-]+$", path):
+            conv_id = path.split("/")[3]
+            delete_conversation(conv_id)
+            self._send_json({"message": "Deleted"})
+        elif re.match(r"^/api/skills/[a-f0-9-]+$", path):
+            skill_id = path.split("/")[3]
+            skills = load_skills()
+            skills = [s for s in skills if s["id"] != skill_id]
+            save_skills(skills)
+            self._send_json({"message": "Deleted"})
+        else:
+            self._send_error("Not found", 404)
+    
+    def _serve_static(self, path):
+        if path == "/" or path == "":
+            path = "/static/index.html"
+        file_path = path.lstrip("/")
+        if not os.path.exists(file_path):
+            self._send_error("Not found", 404)
+            return
+        content_type, _ = mimetypes.guess_type(file_path)
+        if content_type is None:
+            content_type = "application/octet-stream"
+        with open(file_path, "rb") as f:
+            self.send_response(200)
+            self.send_header("Content-Type", content_type)
+            self.send_header("Access-Control-Allow-Origin", "*")
+            self.end_headers()
+            self.wfile.write(f.read())
+    
+    def _conv_to_markdown(self, conv):
+        lines = [f"# {conv.get('title', 'Conversation')}\n"]
+        for msg in conv.get("messages", []):
+            role = msg.get("role", "user")
+            content = msg.get("content", "")
+            lines.append(f"**{role.capitalize()}:** {content}\n")
+        return "\n".join(lines)
+    
+    def log_message(self, format, *args):
+        pass  # Suppress default logging
+
+def run_server():
+    server = HTTPServer((HOST, PORT), Handler)
+    print(f"Server running on http://{HOST}:{PORT}")
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        print("Shutting down...")
+        server.shutdown()
 
 if __name__ == "__main__":
-    host = os.environ.get("HOST", "0.0.0.0")
-    port = int(os.environ.get("PORT", 8000))
-    server = http.server.HTTPServer((host, port), ChatHandler)
-    print(f"Server running on http://{host}:{port}")
-    server.serve_forever()
+    run_server()

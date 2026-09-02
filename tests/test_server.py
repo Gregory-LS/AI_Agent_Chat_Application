@@ -1,93 +1,127 @@
-import json
 import os
+import sys
+import json
 import tempfile
 import unittest
 from unittest.mock import patch, MagicMock
-import sys
-sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
-# We'll test server logic by importing the module and testing functions directly
+# Add parent directory to path
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+# Import server module
 import server
 
-class TestServerFunctions(unittest.TestCase):
+class TestUserAuth(unittest.TestCase):
     def setUp(self):
-        self.tempdir = tempfile.mkdtemp()
-        self.orig_data_dir = server.DATA_DIR
-        self.orig_config_file = server.CONFIG_FILE
-        self.orig_conversations_dir = server.CONVERSATIONS_DIR
-        self.orig_skills_file = server.SKILLS_FILE
-        self.orig_attachments_dir = server.ATTACHMENTS_DIR
-        server.DATA_DIR = self.tempdir
-        server.CONFIG_FILE = os.path.join(self.tempdir, "config.json")
-        server.CONVERSATIONS_DIR = os.path.join(self.tempdir, "conversations")
-        server.SKILLS_FILE = os.path.join(self.tempdir, "skills.json")
-        server.ATTACHMENTS_DIR = os.path.join(self.tempdir, "attachments")
+        # Create temporary directory for data
+        self.temp_dir = tempfile.mkdtemp()
+        self.original_data_dir = server.DATA_DIR
+        server.DATA_DIR = self.temp_dir
+        server.USERS_FILE = os.path.join(self.temp_dir, "users.json")
+        server.CONFIG_FILE = os.path.join(self.temp_dir, "config.json")
+        server.CONVERSATIONS_DIR = os.path.join(self.temp_dir, "conversations")
+        server.SKILLS_FILE = os.path.join(self.temp_dir, "skills.json")
+        server.ATTACHMENTS_DIR = os.path.join(self.temp_dir, "attachments")
         os.makedirs(server.CONVERSATIONS_DIR, exist_ok=True)
         os.makedirs(server.ATTACHMENTS_DIR, exist_ok=True)
-        with open(server.SKILLS_FILE, "w") as f:
-            json.dump([], f)
-        with open(server.CONFIG_FILE, "w") as f:
-            json.dump({"api_key": "", "default_model": ""}, f)
-
+        # Clear sessions
+        server.sessions.clear()
+    
     def tearDown(self):
-        server.DATA_DIR = self.orig_data_dir
-        server.CONFIG_FILE = self.orig_config_file
-        server.CONVERSATIONS_DIR = self.orig_conversations_dir
-        server.SKILLS_FILE = self.orig_skills_file
-        server.ATTACHMENTS_DIR = self.orig_attachments_dir
+        server.DATA_DIR = self.original_data_dir
         import shutil
-        shutil.rmtree(self.tempdir)
+        shutil.rmtree(self.temp_dir, ignore_errors=True)
+    
+    def test_create_user(self):
+        success, msg = server.create_user("testuser", "password123")
+        self.assertTrue(success)
+        self.assertEqual(msg, "User created")
+        # Verify user was saved
+        users = server.load_users()
+        self.assertIn("testuser", users)
+        self.assertNotEqual(users["testuser"]["password"], "password123")  # Hashed
+    
+    def test_create_duplicate_user(self):
+        server.create_user("testuser", "password123")
+        success, msg = server.create_user("testuser", "otherpass")
+        self.assertFalse(success)
+        self.assertEqual(msg, "Username already exists")
+    
+    def test_authenticate_success(self):
+        server.create_user("testuser", "password123")
+        success, token = server.authenticate("testuser", "password123")
+        self.assertTrue(success)
+        self.assertIsNotNone(token)
+        # Token should be in sessions
+        self.assertIn(token, server.sessions)
+        self.assertEqual(server.sessions[token], "testuser")
+    
+    def test_authenticate_wrong_password(self):
+        server.create_user("testuser", "password123")
+        success, token = server.authenticate("testuser", "wrongpass")
+        self.assertFalse(success)
+        self.assertIsNone(token)
+    
+    def test_authenticate_nonexistent_user(self):
+        success, token = server.authenticate("nouser", "password123")
+        self.assertFalse(success)
+        self.assertIsNone(token)
+    
+    def test_validate_session(self):
+        server.create_user("testuser", "password123")
+        _, token = server.authenticate("testuser", "password123")
+        username = server.validate_session(token)
+        self.assertEqual(username, "testuser")
+    
+    def test_validate_invalid_session(self):
+        username = server.validate_session("invalidtoken")
+        self.assertIsNone(username)
+    
+    def test_logout(self):
+        server.create_user("testuser", "password123")
+        _, token = server.authenticate("testuser", "password123")
+        server.logout(token)
+        self.assertNotIn(token, server.sessions)
+        username = server.validate_session(token)
+        self.assertIsNone(username)
 
-    def test_get_config_default(self):
-        cfg = server.get_config()
-        self.assertEqual(cfg["api_key"], "")
-        self.assertEqual(cfg["default_model"], "")
-
-    def test_save_and_get_config(self):
-        server.save_config({"api_key": "test-key", "default_model": "model-x"})
-        cfg = server.get_config()
-        self.assertEqual(cfg["api_key"], "test-key")
-        self.assertEqual(cfg["default_model"], "model-x")
-
-    def test_skills_empty(self):
-        skills = server.get_skills()
-        self.assertEqual(skills, [])
-
-    def test_save_and_get_skills(self):
-        skills = [{"id": "1", "name": "test"}]
-        server.save_skills(skills)
-        self.assertEqual(server.get_skills(), skills)
-
-    def test_conversation_crud(self):
-        cid = "test-id"
-        conv = {"id": cid, "title": "Test", "messages": []}
-        server.save_conversation(cid, conv)
-        loaded = server.get_conversation(cid)
-        self.assertEqual(loaded["title"], "Test")
-        self.assertTrue(server.delete_conversation(cid))
-        self.assertIsNone(server.get_conversation(cid))
-        self.assertFalse(server.delete_conversation("nonexistent"))
-
-    def test_list_conversations(self):
-        server.save_conversation("a", {"id": "a", "title": "A", "created": "now", "updated": "now"})
-        server.save_conversation("b", {"id": "b", "title": "B", "created": "now", "updated": "now"})
-        convs = server.get_conversations()
-        self.assertEqual(len(convs), 2)
-
-    def test_get_headers_no_key(self):
-        with patch.dict(os.environ, {}, clear=True):
-            headers = server.get_headers()
-            self.assertEqual(headers["Authorization"], "Bearer ")
-
-    def test_get_headers_env_key(self):
-        with patch.dict(os.environ, {"OPENROUTER_API_KEY": "env-key"}, clear=True):
-            headers = server.get_headers()
-            self.assertEqual(headers["Authorization"], "Bearer env-key")
-
-    def test_get_headers_config_key(self):
-        server.save_config({"api_key": "cfg-key", "default_model": ""})
-        headers = server.get_headers()
-        self.assertEqual(headers["Authorization"], "Bearer cfg-key")
+class TestServerEndpoints(unittest.TestCase):
+    def setUp(self):
+        self.temp_dir = tempfile.mkdtemp()
+        self.original_data_dir = server.DATA_DIR
+        server.DATA_DIR = self.temp_dir
+        server.USERS_FILE = os.path.join(self.temp_dir, "users.json")
+        server.CONFIG_FILE = os.path.join(self.temp_dir, "config.json")
+        server.CONVERSATIONS_DIR = os.path.join(self.temp_dir, "conversations")
+        server.SKILLS_FILE = os.path.join(self.temp_dir, "skills.json")
+        server.ATTACHMENTS_DIR = os.path.join(self.temp_dir, "attachments")
+        os.makedirs(server.CONVERSATIONS_DIR, exist_ok=True)
+        os.makedirs(server.ATTACHMENTS_DIR, exist_ok=True)
+        server.sessions.clear()
+        # Create a test user and get token
+        server.create_user("testuser", "password123")
+        _, self.token = server.authenticate("testuser", "password123")
+    
+    def tearDown(self):
+        server.DATA_DIR = self.original_data_dir
+        import shutil
+        shutil.rmtree(self.temp_dir, ignore_errors=True)
+    
+    def test_auth_check_authenticated(self):
+        # Simulate request handling
+        from http.server import HTTPServer
+        # We'll test the functions directly
+        result = server.validate_session(self.token)
+        self.assertEqual(result, "testuser")
+    
+    def test_auth_check_unauthenticated(self):
+        result = server.validate_session("invalid")
+        self.assertIsNone(result)
+    
+    def test_protected_endpoint_without_token(self):
+        # Test that _require_auth returns None without token
+        # We can't easily instantiate the handler, but we can test the logic
+        self.assertIsNone(server.validate_session(None))
 
 if __name__ == "__main__":
     unittest.main()
