@@ -1,8 +1,8 @@
-// Tests for settings UI
+// Tests for settings modal UI
 // Run in browser with test_app.html
 
 async function runSettingsTests() {
-  console.log('Running settings tests...');
+  console.log('Running settings modal tests...');
   
   // Test 1: Settings button exists
   const settingsBtn = document.getElementById('settings-btn');
@@ -12,35 +12,36 @@ async function runSettingsTests() {
   }
   console.log('PASS: Settings button exists');
   
-  // Test 2: Click settings button opens drawer
+  // Test 2: Click settings button opens modal
   settingsBtn.click();
-  const drawer = document.getElementById('settings-drawer');
-  if (drawer.classList.contains('hidden')) {
-    console.error('FAIL: Drawer did not open');
+  const modal = document.getElementById('settings-modal');
+  if (modal.classList.contains('hidden')) {
+    console.error('FAIL: Modal did not open');
     return;
   }
-  console.log('PASS: Drawer opens on settings button click');
+  console.log('PASS: Modal opens on settings button click');
   
-  // Test 3: Close button hides drawer
+  // Test 3: Close button hides modal
   const closeBtn = document.getElementById('settings-close-btn');
   closeBtn.click();
-  if (!drawer.classList.contains('hidden')) {
-    console.error('FAIL: Drawer did not close');
+  if (!modal.classList.contains('hidden')) {
+    console.error('FAIL: Modal did not close');
     return;
   }
-  console.log('PASS: Drawer closes on close button click');
+  console.log('PASS: Modal closes on close button click');
   
-  // Test 4: Overlay click closes drawer
+  // Test 4: Overlay click closes modal
   settingsBtn.click();
   const overlay = document.getElementById('overlay');
   overlay.click();
-  if (!drawer.classList.contains('hidden')) {
-    console.error('FAIL: Drawer did not close on overlay click');
+  if (!modal.classList.contains('hidden')) {
+    console.error('FAIL: Modal did not close on overlay click');
     return;
   }
-  console.log('PASS: Overlay click closes drawer');
+  console.log('PASS: Overlay click closes modal');
   
   // Test 5: API key input exists
+  settingsBtn.click();
   const apiKeyInput = document.getElementById('api-key-input');
   if (!apiKeyInput) {
     console.error('FAIL: API key input not found');
@@ -48,15 +49,42 @@ async function runSettingsTests() {
   }
   console.log('PASS: API key input exists');
   
-  // Test 6: Theme select exists
-  const themeSelect = document.getElementById('theme-select');
-  if (!themeSelect) {
-    console.error('FAIL: Theme select not found');
+  // Test 6: Default model select exists
+  const defaultModelSelect = document.getElementById('default-model-select');
+  if (!defaultModelSelect) {
+    console.error('FAIL: Default model select not found');
     return;
   }
-  console.log('PASS: Theme select exists');
+  console.log('PASS: Default model select exists');
   
-  console.log('All settings tests passed!');
+  // Test 7: Theme toggle button exists
+  const themeToggle = document.getElementById('theme-toggle');
+  if (!themeToggle) {
+    console.error('FAIL: Theme toggle button not found');
+    return;
+  }
+  console.log('PASS: Theme toggle button exists');
+  
+  // Test 8: Balance info exists
+  const balanceInfo = document.getElementById('balance-info');
+  if (!balanceInfo) {
+    console.error('FAIL: Balance info not found');
+    return;
+  }
+  console.log('PASS: Balance info exists');
+  
+  // Test 9: Logout button exists
+  const logoutBtn = document.getElementById('logout-btn');
+  if (!logoutBtn) {
+    console.error('FAIL: Logout button not found');
+    return;
+  }
+  console.log('PASS: Logout button exists');
+  
+  // Cleanup: close modal
+  closeBtn.click();
+  
+  console.log('All settings modal tests passed!');
 }
 
 // Run tests when page loads
