@@ -1,63 +1,71 @@
-// Tests for settings UI
+// Tests for settings modal functionality
 // Run in browser with test_app.html
 
-async function runSettingsTests() {
-  console.log('Running settings tests...');
-  
-  // Test 1: Settings button exists
-  const settingsBtn = document.getElementById('settings-btn');
-  if (!settingsBtn) {
-    console.error('FAIL: Settings button not found');
-    return;
-  }
-  console.log('PASS: Settings button exists');
-  
-  // Test 2: Click settings button opens drawer
-  settingsBtn.click();
-  const drawer = document.getElementById('settings-drawer');
-  if (drawer.classList.contains('hidden')) {
-    console.error('FAIL: Drawer did not open');
-    return;
-  }
-  console.log('PASS: Drawer opens on settings button click');
-  
-  // Test 3: Close button hides drawer
-  const closeBtn = document.getElementById('settings-close-btn');
-  closeBtn.click();
-  if (!drawer.classList.contains('hidden')) {
-    console.error('FAIL: Drawer did not close');
-    return;
-  }
-  console.log('PASS: Drawer closes on close button click');
-  
-  // Test 4: Overlay click closes drawer
-  settingsBtn.click();
-  const overlay = document.getElementById('overlay');
-  overlay.click();
-  if (!drawer.classList.contains('hidden')) {
-    console.error('FAIL: Drawer did not close on overlay click');
-    return;
-  }
-  console.log('PASS: Overlay click closes drawer');
-  
-  // Test 5: API key input exists
-  const apiKeyInput = document.getElementById('api-key-input');
-  if (!apiKeyInput) {
-    console.error('FAIL: API key input not found');
-    return;
-  }
-  console.log('PASS: API key input exists');
-  
-  // Test 6: Theme select exists
-  const themeSelect = document.getElementById('theme-select');
-  if (!themeSelect) {
-    console.error('FAIL: Theme select not found');
-    return;
-  }
-  console.log('PASS: Theme select exists');
-  
-  console.log('All settings tests passed!');
-}
+(async function testSettingsModal() {
+  let passed = 0;
+  let failed = 0;
 
-// Run tests when page loads
-window.addEventListener('load', runSettingsTests);
+  function assert(condition, message) {
+    if (condition) {
+      passed++;
+    } else {
+      failed++;
+      console.error('FAIL: ' + message);
+    }
+  }
+
+  // Test that modal opens and closes
+  const modal = document.getElementById('settings-modal');
+  const openBtn = document.getElementById('settings-btn');
+  const closeBtn = document.getElementById('settings-close-btn');
+  const cancelBtn = document.getElementById('settings-cancel-btn');
+
+  // Initial state
+  assert(modal.style.display === 'none' || modal.style.display === '', 'Modal initially hidden');
+
+  // Open modal
+  openBtn.click();
+  assert(modal.style.display === 'flex', 'Modal visible after open button click');
+
+  // Close with close button
+  closeBtn.click();
+  assert(modal.style.display === 'none', 'Modal hidden after close button');
+
+  // Open again
+  openBtn.click();
+  assert(modal.style.display === 'flex', 'Modal visible after second open');
+
+  // Close with cancel button
+  cancelBtn.click();
+  assert(modal.style.display === 'none', 'Modal hidden after cancel button');
+
+  // Test backdrop click closes modal
+  openBtn.click();
+  modal.click();
+  assert(modal.style.display === 'flex', 'Modal stays open on inner click');
+  // Click on backdrop (simulate by dispatching on modal itself if target is modal)
+  // The event listener checks e.target === modal, so clicking modal itself closes it
+  const backdropEvent = new MouseEvent('click', { bubbles: true });
+  modal.dispatchEvent(backdropEvent);
+  assert(modal.style.display === 'none', 'Modal hidden after backdrop click');
+
+  // Test that fields are populated on open
+  openBtn.click();
+  const apiKeyInput = document.getElementById('settings-api-key');
+  const defaultModelSelect = document.getElementById('settings-default-model');
+  assert(apiKeyInput.value !== undefined, 'API key input present');
+  assert(defaultModelSelect.options.length > 0, 'Default model select populated');
+  closeBtn.click();
+
+  // Test save button exists
+  const saveBtn = document.getElementById('settings-save-btn');
+  assert(saveBtn !== null, 'Save button exists');
+  assert(saveBtn.tagName === 'BUTTON', 'Save button is a button');
+
+  console.log(`Tests completed: ${passed} passed, ${failed} failed`);
+  if (failed > 0) {
+    console.error('Some tests failed');
+  } else {
+    console.log('All tests passed!');
+  }
+})();

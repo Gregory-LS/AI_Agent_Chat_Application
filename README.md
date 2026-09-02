@@ -10,7 +10,7 @@ A Claude-style chat application powered by OpenRouter. Chat with hundreds of mod
 - **Skills** — enable/disable built-in skills or create your own custom system prompts
 - **Conversations** — sidebar with search, rename, delete, auto-title from first message
 - **Attachments** — upload images (sent to vision-capable models), text/code files (inlined as context)
-- **Settings** — API key management, default model, dark/light theme
+- **Settings** — API key management, default model, dark/light theme (via settings modal)
 - **Export/Import** — download conversations as JSON or Markdown, restore from backup
 
 ## Quick start

@@ -9,46 +9,51 @@
 <body>
 <div id="app">
   <aside id="sidebar">
-    <div class="sidebar-header">
+    <div id="sidebar-header">
+      <h2>Conversations</h2>
       <button id="new-chat-btn" title="New conversation">+</button>
-      <button id="settings-btn" title="Settings">⚙</button>
     </div>
     <div id="conversation-list"></div>
+    <div id="sidebar-footer">
+      <button id="settings-btn" title="Settings">⚙️ Settings</button>
+    </div>
   </aside>
   <main id="main">
-    <div id="chat-area">
-      <div id="messages"></div>
-      <div id="composer">
-        <textarea id="message-input" placeholder="Type a message..."></textarea>
-        <button id="send-btn">Send</button>
-        <button id="stop-btn" style="display:none;">Stop</button>
+    <header id="chat-header">
+      <div id="model-picker">
+        <select id="model-select"></select>
       </div>
+      <div id="skills-area"></div>
+    </header>
+    <div id="messages"></div>
+    <div id="composer">
+      <textarea id="message-input" placeholder="Type a message..." rows="1"></textarea>
+      <button id="send-btn" disabled>Send</button>
+      <button id="stop-btn" style="display:none">Stop</button>
     </div>
   </main>
-  <div id="settings-drawer" class="drawer hidden">
-    <div class="drawer-header">
+</div>
+
+<!-- Settings Modal -->
+<div id="settings-modal" class="modal-backdrop" style="display:none">
+  <div class="modal">
+    <div class="modal-header">
       <h2>Settings</h2>
-      <button id="settings-close-btn">&times;</button>
+      <button class="modal-close" id="settings-close-btn">&times;</button>
     </div>
-    <div class="drawer-content">
-      <label for="api-key-input">OpenRouter API Key</label>
-      <input type="password" id="api-key-input" placeholder="sk-or-...">
-      <button id="save-api-key-btn">Save API Key</button>
-      <label for="default-model-select">Default Model</label>
-      <select id="default-model-select">
-        <option value="">Loading models...</option>
-      </select>
-      <label for="theme-select">Theme</label>
-      <select id="theme-select">
-        <option value="light">Light</option>
-        <option value="dark">Dark</option>
-      </select>
-      <button id="save-settings-btn">Save Settings</button>
-      <div id="settings-status"></div>
+    <div class="modal-body">
+      <label for="settings-api-key">OpenRouter API Key</label>
+      <input type="password" id="settings-api-key" placeholder="sk-or-..." />
+      <label for="settings-default-model">Default Model</label>
+      <select id="settings-default-model"></select>
+    </div>
+    <div class="modal-footer">
+      <button id="settings-save-btn">Save</button>
+      <button id="settings-cancel-btn">Cancel</button>
     </div>
   </div>
-  <div id="overlay" class="hidden"></div>
 </div>
+
 <script src="app.js"></script>
 </body>
 </html>
