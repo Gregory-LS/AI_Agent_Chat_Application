@@ -1,145 +1,183 @@
 import os
 import shutil
 from pathlib import Path
-from typing import Optional, Union
-
-from PIL import Image
+from typing import List, Optional, BinaryIO
 
 
 class AttachmentHandler:
-    """Handles attachment uploads for images and text files.
+    """Handles file attachments stored in a local directory.
+
+    Each attachment is stored as a file under a base directory.
+    The filename is uniquely identified by a combination of a
+    parent resource identifier (e.g., issue ID) and the original
+    filename. Duplicate filenames are resolved by appending a
+    counter.
 
     Attributes:
-        upload_dir (Path): Directory where attachments are saved.
-        max_image_size_mb (int): Maximum allowed image size in MB.
-        max_text_size_mb (int): Maximum allowed text file size in MB.
-        allowed_image_extensions (set): Allowed image file extensions.
-        allowed_text_extensions (set): Allowed text file extensions.
+        base_dir (Path): Root directory for storing attachments.
     """
 
-    def __init__(
-        self,
-        upload_dir: Union[str, Path] = "uploads",
-        max_image_size_mb: int = 5,
-        max_text_size_mb: int = 1,
-    ):
-        """Initialize the handler.
+    def __init__(self, base_dir: str = "./attachments"):
+        """Initialize the handler with a base directory.
 
         Args:
-            upload_dir: Directory to store uploaded files.
-            max_image_size_mb: Maximum image file size in MB.
-            max_text_size_mb: Maximum text file size in MB.
+            base_dir: Path to the directory where attachments are stored.
+                      Created if it does not exist.
         """
-        self.upload_dir = Path(upload_dir)
-        self.upload_dir.mkdir(parents=True, exist_ok=True)
-        self.max_image_size_mb = max_image_size_mb
-        self.max_text_size_mb = max_text_size_mb
-        self.allowed_image_extensions = {".jpg", ".jpeg", ".png", ".gif", ".bmp"}
-        self.allowed_text_extensions = {".txt", ".md", ".csv", ".log"}
+        self.base_dir = Path(base_dir)
+        self.base_dir.mkdir(parents=True, exist_ok=True)
 
-    def handle_image(self, file: Union[str, Path]) -> Path:
-        """Process and save an image file.
+    def _resolve_path(self, resource_id: str, filename: str) -> Path:
+        """Return the full path for an attachment.
 
         Args:
-            file: Path to the image file to be handled.
+            resource_id: Identifier of the parent resource (e.g., issue ID).
+            filename: Original filename of the attachment.
 
         Returns:
-            Path to the saved image file.
+            Path to the stored file.
+        """
+        resource_dir = self.base_dir / resource_id
+        resource_dir.mkdir(parents=True, exist_ok=True)
+        return resource_dir / filename
+
+    def upload(self, resource_id: str, filename: str, file_content: bytes) -> str:
+        """Upload an attachment to a resource.
+
+        If a file with the same name already exists, a counter is
+        appended to the filename before the extension.
+
+        Args:
+            resource_id: Identifier of the parent resource.
+            filename: Original filename (may include path components).
+            file_content: Raw bytes of the file.
+
+        Returns:
+            The actual filename under which the attachment was stored.
 
         Raises:
-            FileNotFoundError: If the file does not exist.
-            ValueError: If the file is not a valid image, has an unsupported
-                extension, or exceeds the size limit.
+            ValueError: If resource_id or filename is empty.
+            IOError: If the file cannot be written.
         """
-        file_path = Path(file)
-        if not file_path.exists():
-            raise FileNotFoundError(f"File not found: {file_path}")
-
-        ext = file_path.suffix.lower()
-        if ext not in self.allowed_image_extensions:
-            raise ValueError(
-                f"Unsupported image extension '{ext}'. Allowed: {self.allowed_image_extensions}"
-            )
-
-        size_mb = file_path.stat().st_size / (1024 * 1024)
-        if size_mb > self.max_image_size_mb:
-            raise ValueError(
-                f"Image file size {size_mb:.2f} MB exceeds maximum of {self.max_image_size_mb} MB"
-            )
-
-        # Verify it's a valid image using PIL
+        if not resource_id:
+            raise ValueError("resource_id must not be empty")
+        if not filename:
+            raise ValueError("filename must not be empty")
+        # Sanitize filename: keep only basename
+        sanitized = Path(filename).name
+        if not sanitized:
+            raise ValueError("filename contains no valid basename")
+        # Resolve path with potential deduplication
+        resource_dir = self.base_dir / resource_id
+        resource_dir.mkdir(parents=True, exist_ok=True)
+        dest = resource_dir / sanitized
+        if dest.exists():
+            # Append counter before extension
+            stem = dest.stem
+            suffix = dest.suffix
+            counter = 1
+            while True:
+                new_name = f"{stem}_{counter}{suffix}"
+                dest = resource_dir / new_name
+                if not dest.exists():
+                    break
+                counter += 1
         try:
-            with Image.open(file_path) as img:
-                img.verify()
-        except Exception as e:
-            raise ValueError(f"File is not a valid image: {e}")
+            dest.write_bytes(file_content)
+        except OSError as e:
+            raise IOError(f"Failed to write attachment {dest}: {e}") from e
+        return dest.name
 
-        # Save to upload directory
-        dest = self.upload_dir / file_path.name
-        shutil.copy2(file_path, dest)
-        return dest
-
-    def handle_text(self, file: Union[str, Path]) -> Path:
-        """Process and save a text file.
+    def download(self, resource_id: str, filename: str) -> bytes:
+        """Download an attachment's content.
 
         Args:
-            file: Path to the text file to be handled.
+            resource_id: Identifier of the parent resource.
+            filename: Exact filename (including any deduplication suffix).
 
         Returns:
-            Path to the saved text file.
+            Raw bytes of the file.
 
         Raises:
-            FileNotFoundError: If the file does not exist.
-            ValueError: If the file has an unsupported extension, exceeds the
-                size limit, or contains non-UTF-8 characters.
+            FileNotFoundError: If the attachment does not exist.
+            ValueError: If resource_id or filename is empty.
         """
-        file_path = Path(file)
-        if not file_path.exists():
-            raise FileNotFoundError(f"File not found: {file_path}")
+        if not resource_id:
+            raise ValueError("resource_id must not be empty")
+        if not filename:
+            raise ValueError("filename must not be empty")
+        path = self._resolve_path(resource_id, filename)
+        if not path.exists():
+            raise FileNotFoundError(f"Attachment not found: {path}")
+        return path.read_bytes()
 
-        ext = file_path.suffix.lower()
-        if ext not in self.allowed_text_extensions:
-            raise ValueError(
-                f"Unsupported text extension '{ext}'. Allowed: {self.allowed_text_extensions}"
-            )
+    def list_attachments(self, resource_id: str) -> List[str]:
+        """List all attachment filenames for a given resource.
 
-        size_mb = file_path.stat().st_size / (1024 * 1024)
-        if size_mb > self.max_text_size_mb:
-            raise ValueError(
-                f"Text file size {size_mb:.2f} MB exceeds maximum of {self.max_text_size_mb} MB"
-            )
+        Args:
+            resource_id: Identifier of the parent resource.
 
-        # Check if file is valid UTF-8 text
+        Returns:
+            List of filenames (sorted alphabetically).
+
+        Raises:
+            ValueError: If resource_id is empty.
+        """
+        if not resource_id:
+            raise ValueError("resource_id must not be empty")
+        resource_dir = self.base_dir / resource_id
+        if not resource_dir.exists():
+            return []
+        return sorted([f.name for f in resource_dir.iterdir() if f.is_file()])
+
+    def delete_attachment(self, resource_id: str, filename: str) -> bool:
+        """Delete an attachment.
+
+        Args:
+            resource_id: Identifier of the parent resource.
+            filename: Exact filename to delete.
+
+        Returns:
+            True if the file was deleted, False if it did not exist.
+
+        Raises:
+            ValueError: If resource_id or filename is empty.
+        """
+        if not resource_id:
+            raise ValueError("resource_id must not be empty")
+        if not filename:
+            raise ValueError("filename must not be empty")
+        path = self._resolve_path(resource_id, filename)
+        if path.exists():
+            path.unlink()
+            return True
+        return False
+
+    def delete_all_for_resource(self, resource_id: str) -> int:
+        """Delete all attachments for a given resource.
+
+        Args:
+            resource_id: Identifier of the parent resource.
+
+        Returns:
+            Number of deleted files.
+
+        Raises:
+            ValueError: If resource_id is empty.
+        """
+        if not resource_id:
+            raise ValueError("resource_id must not be empty")
+        resource_dir = self.base_dir / resource_id
+        if not resource_dir.exists():
+            return 0
+        count = 0
+        for f in resource_dir.iterdir():
+            if f.is_file():
+                f.unlink()
+                count += 1
+        # Optionally remove empty directory
         try:
-            with open(file_path, "r", encoding="utf-8") as f:
-                f.read()
-        except UnicodeDecodeError as e:
-            raise ValueError(f"File is not valid UTF-8 text: {e}")
-
-        # Save to upload directory
-        dest = self.upload_dir / file_path.name
-        shutil.copy2(file_path, dest)
-        return dest
-
-    def save_attachment(self, file: Union[str, Path]) -> Path:
-        """Automatically detect file type and handle accordingly.
-
-        Args:
-            file: Path to the file.
-
-        Returns:
-            Path to the saved file.
-
-        Raises:
-            ValueError: If the file type cannot be determined.
-        """
-        ext = Path(file).suffix.lower()
-        if ext in self.allowed_image_extensions:
-            return self.handle_image(file)
-        elif ext in self.allowed_text_extensions:
-            return self.handle_text(file)
-        else:
-            raise ValueError(
-                f"Unsupported file extension '{ext}'. Allowed image: {self.allowed_image_extensions}, "
-                f"text: {self.allowed_text_extensions}"
-            )
+            resource_dir.rmdir()
+        except OSError:
+            pass  # Directory not empty or other error
+        return count
