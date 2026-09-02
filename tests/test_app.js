@@ -1,61 +1,57 @@
-const assert = require('assert');
-const { createStore, render } = require('../static/app');
+const ChatApp = require('../app.js');
 
-describe('createStore', function() {
-  it('should create a store with initial state', function() {
-    const store = createStore({ count: 0 });
-    assert.deepStrictEqual(store.getState(), { count: 0 });
-  });
+// Simple mock for WebSocket (Node.js environment)
+global.WebSocket = require('ws');
 
-  it('should update state with setState', function() {
-    const store = createStore({ count: 0 });
-    store.setState({ count: 1 });
-    assert.deepStrictEqual(store.getState(), { count: 1 });
-  });
+describe('ChatApp', () => {
+    let chat;
+    let server;
 
-  it('should merge state with setState', function() {
-    const store = createStore({ a: 1, b: 2 });
-    store.setState({ b: 3 });
-    assert.deepStrictEqual(store.getState(), { a: 1, b: 3 });
-  });
-
-  it('should notify subscribers on state change', function() {
-    const store = createStore({ count: 0 });
-    let notified = false;
-    store.subscribe((newState) => {
-      notified = true;
-      assert.strictEqual(newState.count, 1);
+    beforeAll(() => {
+        // Setup a mock server using ws library or similar; for now we just test constructor
     });
-    store.setState({ count: 1 });
-    assert.ok(notified);
-  });
 
-  it('should not notify after unsubscribe', function() {
-    const store = createStore({ count: 0 });
-    let callCount = 0;
-    const unsubscribe = store.subscribe(() => { callCount++; });
-    unsubscribe();
-    store.setState({ count: 1 });
-    assert.strictEqual(callCount, 0);
-  });
-});
+    beforeEach(() => {
+        chat = new ChatApp('ws://localhost:12345');
+    });
 
-describe('render', function() {
-  it('should render initial state and update on change', function() {
-    const store = createStore({ count: 0 });
-    const root = { innerHTML: '' };
-    const renderFn = (state) => `<p>${state.count}</p>`;
-    const unsubscribe = render(store, root, renderFn);
-    assert.strictEqual(root.innerHTML, '<p>0</p>');
-    store.setState({ count: 5 });
-    assert.strictEqual(root.innerHTML, '<p>5</p>');
-    unsubscribe();
-  });
+    test('constructor should set serverUrl', () => {
+        expect(chat.serverUrl).toBe('ws://localhost:12345');
+    });
 
-  it('should return unsubscribe function', function() {
-    const store = createStore();
-    const root = { innerHTML: '' };
-    const unsub = render(store, root, () => '');
-    assert.strictEqual(typeof unsub, 'function');
-  });
+    test('should have empty handlers on init', () => {
+        expect(chat.messageHandlers).toHaveLength(0);
+        expect(chat.joinHandlers).toHaveLength(0);
+        expect(chat.leaveHandlers).toHaveLength(0);
+    });
+
+    test('onMessage should add handler', () => {
+        const handler = jest.fn();
+        chat.onMessage(handler);
+        expect(chat.messageHandlers).toHaveLength(1);
+        expect(chat.messageHandlers[0]).toBe(handler);
+    });
+
+    test('onJoin should add handler', () => {
+        const handler = jest.fn();
+        chat.onJoin(handler);
+        expect(chat.joinHandlers).toHaveLength(1);
+        expect(chat.joinHandlers[0]).toBe(handler);
+    });
+
+    test('onLeave should add handler', () => {
+        const handler = jest.fn();
+        chat.onLeave(handler);
+        expect(chat.leaveHandlers).toHaveLength(1);
+        expect(chat.leaveHandlers[0]).toBe(handler);
+    });
+
+    test('sendMessage should not fail if not connected', () => {
+        // Should log error, not throw
+        expect(() => chat.sendMessage('test', 'user')).not.toThrow();
+    });
+
+    test('disconnect should not fail if not connected', () => {
+        expect(() => chat.disconnect()).not.toThrow();
+    });
 });

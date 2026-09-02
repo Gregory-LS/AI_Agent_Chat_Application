@@ -1,25 +1,72 @@
-# Agentic Chat
+# Chat Application
 
-A Claude-style chat application powered by OpenRouter. Chat with hundreds of models, create custom skills, and manage conversations.
+A simple real-time chat application using WebSockets.
 
 ## Features
-- Chat with streaming responses and stop mid-stream
-- Model picker: browse all OpenRouter models grouped by provider
-- Skills: enable/disable built-in skills or create custom ones
-- Conversations: sidebar with search, rename, delete, auto-title
-- Attachments: upload images and text/code files
-- Settings: API key management, default model, dark/light theme
-- Export/Import: download conversations as JSON or Markdown
 
-## Quick start
+- WebSocket-based messaging
+- User join/leave notifications
+- Broadcast messages to all connected clients
+
+## Backend (Python)
+
+### Prerequisites
+
+- Python 3.7+
+- `websockets` library: `pip install websockets`
+
+### Running
+
 ```bash
-pip install httpx
-export OPENROUTER_API_KEY=sk-or-...
-cd _app && python server.py
+python server.py
 ```
-Open http://localhost:8000
 
-## Built with
-- Python stdlib http.server + httpx (no frameworks)
-- Vanilla JS frontend (no frameworks)
-- OpenRouter API for model access
+The server will start on `ws://0.0.0.0:8765`.
+
+### Testing
+
+```bash
+pytest tests/test_server.py -v
+```
+
+## Frontend (JavaScript)
+
+### Files
+
+- `app.js`: Contains the `ChatApp` class for WebSocket communication.
+
+### Usage
+
+```html
+<script src="app.js"></script>
+<script>
+    const chat = new ChatApp('ws://localhost:8765');
+    chat.connect();
+
+    chat.onMessage((data) => {
+        console.log(`${data.user}: ${data.message}`);
+    });
+
+    chat.onJoin((data) => {
+        console.log(data.message);
+    });
+
+    chat.onLeave((data) => {
+        console.log(data.message);
+    });
+
+    // Send a message
+    chat.sendMessage('Hello!', 'Alice');
+</script>
+```
+
+### Running Tests
+
+```bash
+npm install
+npm test
+```
+
+## License
+
+MIT
