@@ -90,3 +90,11 @@ python -m pytest tests/
 ```
 
 (Requires `pytest` installed.)
+
+## Styling
+
+The UI uses CSS custom properties for theming. Two themes are supported:
+- **Light** (default) — white backgrounds, dark text, blue accent
+- **Dark** — dark backgrounds, light text, light blue accent
+
+Toggle theme via the settings drawer or `data-theme` attribute on `<html>`.
