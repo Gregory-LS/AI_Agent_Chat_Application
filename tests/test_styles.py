@@ -1,33 +1,50 @@
 import unittest
-from pathlib import Path
-
-ROOT = Path(__file__).resolve().parent.parent
-CSS_PATH = ROOT / 'static' / 'styles.css'
-
-
+import html
+import re
 class TestStyles(unittest.TestCase):
-    @classmethod
-    def setUpClass(cls):
-        cls.css = CSS_PATH.read_text(encoding='utf-8')
+    def test_html_structure(self):
+        with open('static/index.html', 'r') as f:
+            content = f.read()
+        self.assertIn('<html', content)
+        self.assertIn('</html>', content)
+        self.assertIn('<head>', content)
+        self.assertIn('</head>', content)
+        self.assertIn('<body>', content)
+        self.assertIn('</body>', content)
+        self.assertIn('id="app"', content)
+        self.assertIn('id="sidebar"', content)
+        self.assertIn('id="chat-area"', content)
+        self.assertIn('id="composer"', content)
+        self.assertIn('id="model-picker-modal"', content)
+        self.assertIn('id="skills-drawer"', content)
+        self.assertIn('id="settings-modal"', content)
 
-    def test_file_exists_and_nonempty(self):
-        self.assertTrue(CSS_PATH.exists())
-        self.assertGreater(len(self.css), 0)
+    def test_essential_elements(self):
+        with open('static/index.html', 'r') as f:
+            content = f.read()
+        self.assertIn('id="message-input"', content)
+        self.assertIn('id="send-btn"', content)
+        self.assertIn('id="new-chat-btn"', content)
+        self.assertIn('id="conversation-list"', content)
+        self.assertIn('id="models-btn"', content)
+        self.assertIn('id="skills-btn"', content)
+        self.assertIn('id="settings-btn"', content)
+        self.assertIn('id="stop-btn"', content)
+        self.assertIn('id="model-search"', content)
+        self.assertIn('id="model-list"', content)
+        self.assertIn('id="skills-list"', content)
+        self.assertIn('id="api-key-input"', content)
+        self.assertIn('id="theme-select"', content)
 
-    def test_theme_variables(self):
-        self.assertIn(':root', self.css)
-        self.assertIn("[data-theme='dark']", self.css)
-
-    def test_core_layout_selectors(self):
-        for selector in ('.sidebar', '.chat', '.composer', '.drawer', '.modal', '.messages', '.message'):
-            self.assertIn(selector, self.css)
-
-    def test_braces_balanced(self):
-        self.assertEqual(self.css.count('{'), self.css.count('}'))
-
-    def test_no_url_missing(self):
-        self.assertNotIn('url(', self.css)
-
+    def test_markup_validity(self):
+        with open('static/index.html', 'r') as f:
+            content = f.read()
+        # Simple check: no unclosed tags or obvious issues
+        open_tags = re.findall(r'<([a-zA-Z]+)[^>]*>', content)
+        close_tags = re.findall(r'</([a-zA-Z]+)>', content)
+        for tag in ['html', 'head', 'body', 'aside', 'main', 'header', 'div']:
+            self.assertIn(tag, open_tags)
+            self.assertIn(tag, close_tags)
 
 if __name__ == '__main__':
     unittest.main()

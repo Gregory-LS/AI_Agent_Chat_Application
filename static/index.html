@@ -1,11 +1,115 @@
-<!DOCTYPE html><html lang="en" data-theme="dark"><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Agentic Chat</title><link rel="stylesheet" href="/static/styles.css"></head><body>
-<div class=ap><div class=sb id=sb><div class=sh><h2>Chats</h2><button onclick=newChat()>+</button><button onclick=toggleSb() class=sc>x</button></div><div class=ss><input placeholder=Search oninput=searchC(this.value)></div><div class=cl id=cl></div></div>
-<div class=mn><div class=hd><button onclick=toggleSb() class=sc>&#9776;</button><span class=mb id=mb onclick=mp.classList.add('open')>Select model</span><span class=sp></span><button onclick=toggleSkills()>&#128161;</button><button onclick=showSettings()>&#9881;</button></div>
-<div class=ms id=ms><div class=wl id=wl><h1>Agentic Chat</h1><p>Your AI assistant. Select a model and start chatting!</p></div></div>
-<div class=cp><div class=ir><textarea id=inp placeholder=Message... onkeydown="if(event.key==='Enter'&&!(event.shiftKey||event.ctrlKey||event.metaKey)){event.preventDefault();send()}"></textarea>
-<button class="sb hid" id=sbBtn onclick=stopStream()>Stop</button><button id=sendBtn onclick=send()>Send</button></div></div></div></div>
-<div class=sp id=sp><div class=sp-h><h3>Skills</h3><button class=sc onclick=showSkillEditor()>+ Add</button><button onclick=toggleSkills() class=sc>x</button></div><div class=sp-l id=sl></div></div>
-<div class=mo id=mp><div class=md><h2>Select Model<button class=cl onclick=closeModals()>&times;</button></h2><div class=srch><input placeholder="Search models..." oninput=filterModels(this.value)></div><div class=ml id=ml></div></div></div>
-<div class=mo id=settings><div class=md><h2>Settings<button class=cl onclick=closeModals()>&times;</button></h2><div class=fd><label>API Key</label><input id=apiKey></div><div class=fd><label>Default Model</label><select id=defModel></select></div><button onclick=saveSettings()>Save</button></div></div>
-<div class=mo id=se><div class=md><h2 id=seTitle>Edit Skill<button class=cl onclick=closeModals()>&times;</button></h2><div class=fd><label>Name</label><input id=skName maxlength=80></div><div class=fd><label>Description</label><input id=skDesc maxlength=300></div><div class=fd><label>System Prompt</label><textarea id=skPrompt rows=6></textarea></div><button onclick=saveSkill()>Save</button></div></div>
-<script src="/static/app.js"></script></body></html>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Agentic Chat</title>
+  <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+  <div id="app" class="app-container">
+    <!-- Sidebar -->
+    <aside id="sidebar" class="sidebar" role="navigation" aria-label="Sidebar">
+      <div class="sidebar-header">
+        <button id="new-chat-btn" class="btn new-chat-btn" title="New conversation">+ New Chat</button>
+        <button id="toggle-sidebar-btn" class="btn icon-btn" title="Toggle sidebar">☰</button>
+      </div>
+      <div class="sidebar-search">
+        <input type="text" id="search-conversations" placeholder="Search conversations..." aria-label="Search conversations">
+      </div>
+      <ul id="conversation-list" class="conversation-list" aria-label="Conversations">
+        <!-- Conversations will be populated by JavaScript -->
+      </ul>
+    </aside>
+
+    <!-- Main chat area -->
+    <main id="chat-area" class="chat-area" role="main">
+      <header class="chat-header">
+        <h1 id="chat-title" class="chat-title">Agentic Chat</h1>
+        <div class="header-actions">
+          <button id="models-btn" class="btn" title="Select a model">Model: <span id="current-model">Unknown</span></button>
+          <button id="skills-btn" class="btn" title="Manage skills">Skills</button>
+          <button id="settings-btn" class="btn" title="Settings">⚙</button>
+        </div>
+      </header>
+
+      <div id="messages-container" class="messages-container" aria-live="polite">
+        <div id="welcome-message" class="welcome-message">
+          <h2>Welcome to Agentic Chat</h2>
+          <p>Select a model and start a conversation.</p>
+        </div>
+        <!-- Messages will be populated by JavaScript -->
+      </div>
+
+      <div id="stop-container" class="stop-container" style="display: none;">
+        <button id="stop-btn" class="btn stop-btn">Stop Generating</button>
+      </div>
+
+      <div id="composer" class="composer">
+        <textarea id="message-input" class="message-input" placeholder="Type a message..." rows="3" aria-label="Message input"></textarea>
+        <button id="attach-btn" class="btn attach-btn" title="Attach file">📎</button>
+        <button id="send-btn" class="btn send-btn" disabled>Send</button>
+      </div>
+    </main>
+  </div>
+
+  <!-- Model Picker Modal -->
+  <div id="model-picker-modal" class="modal" role="dialog" aria-labelledby="model-picker-title" aria-hidden="true">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2 id="model-picker-title">Select Model</h2>
+        <button id="close-model-picker-btn" class="btn icon-btn" aria-label="Close model picker">✕</button>
+      </div>
+      <input type="text" id="model-search" placeholder="Search models..." aria-label="Search models">
+      <div id="model-list" class="model-list">
+        <!-- Models will be populated by JavaScript -->
+      </div>
+    </div>
+  </div>
+
+  <!-- Skills Drawer -->
+  <div id="skills-drawer" class="drawer" role="dialog" aria-labelledby="skills-drawer-title" aria-hidden="true">
+    <div class="drawer-content">
+      <div class="drawer-header">
+        <h2 id="skills-drawer-title">Skills</h2>
+        <button id="close-skills-btn" class="btn icon-btn" aria-label="Close skills drawer">✕</button>
+      </div>
+      <div id="skills-list" class="skills-list">
+        <!-- Skills will be populated by JavaScript -->
+      </div>
+      <div class="skills-footer">
+        <button id="add-skill-btn" class="btn">+ Add Skill</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Settings Modal -->
+  <div id="settings-modal" class="modal" role="dialog" aria-labelledby="settings-title" aria-hidden="true">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2 id="settings-title">Settings</h2>
+        <button id="close-settings-btn" class="btn icon-btn" aria-label="Close settings">✕</button>
+      </div>
+      <div class="settings-body">
+        <label for="api-key-input">API Key</label>
+        <input type="password" id="api-key-input" placeholder="Enter your OpenRouter API key" aria-label="API Key">
+        <button id="save-api-key-btn" class="btn">Save Key</button>
+        <label for="default-model-select">Default Model</label>
+        <select id="default-model-select" aria-label="Default model">
+          <option value="">—</option>
+        </select>
+        <label for="theme-select">Theme</label>
+        <select id="theme-select" aria-label="Theme">
+          <option value="light">Light</option>
+          <option value="dark">Dark</option>
+        </select>
+        <button id="export-conversations-btn" class="btn">Export All Conversations</button>
+        <button id="import-conversations-btn" class="btn">Import Conversations</button>
+        <input type="file" id="import-file-input" accept=".json" style="display:none">
+      </div>
+    </div>
+  </div>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>

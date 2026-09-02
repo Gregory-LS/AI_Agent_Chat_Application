@@ -1,67 +1,12 @@
 <!DOCTYPE html>
 <html>
-<head><title>App Test</title></head>
+<head>
+  <title>Test Suite - Agentic Chat</title>
+  <link rel="stylesheet" href="/static/styles.css">
+</head>
 <body>
-<div id="sidebar">
-  <div id="conversation-list"></div>
-  <input id="search-conversations" type="text">
-  <button id="new-chat-btn">+</button>
-  <button id="sidebar-toggle">☰</button>
-</div>
-<div id="chat-area">
-  <div id="messages"></div>
-  <div id="composer">
-    <textarea id="message-input"></textarea>
-    <button id="send-btn">Send</button>
-    <button id="stop-btn" style="display:none">Stop</button>
-    <button id="attachment-btn">📎</button>
-    <input id="attachment-input" type="file" multiple style="display:none">
-    <div id="attachment-preview"></div>
-  </div>
-</div>
-<div id="settings-btn">⚙</div>
-<div id="skills-btn">🧠</div>
-<div id="skills-panel" class="skills-panel">
-  <div id="skills-list"></div>
-  <button id="add-skill-btn">+ Add Skill</button>
-</div>
-<div id="settings-modal" class="modal" style="display:none">
-  <div class="modal-content">
-    <span class="close-modal">✕</span>
-    <form id="settings-form">
-      <label>API Key: <input id="api-key" type="password"></label>
-      <label>Default Model: <input id="default-model" type="text"></label>
-      <label>Theme: <select id="theme-select"><option value="light">Light</option><option value="dark">Dark</option></select></label>
-      <button type="submit">Save</button>
-    </form>
-  </div>
-</div>
-<div id="model-picker" class="model-picker">
-  <input id="model-search" type="text" placeholder="Search models...">
-</div>
-<button id="export-btn">Export</button>
-<button id="import-btn">Import</button>
-<input id="import-input" type="file" accept=".json" style="display:none">
-
-<script src="../static/app.js"></script>
-<script>
-  // Basic test: ensure App is defined and methods exist
-  const tests = [
-    ['App object exists', typeof App === 'object'],
-    ['App.init is function', typeof App.init === 'function'],
-    ['App.sendMessage is function', typeof App.sendMessage === 'function'],
-    ['App.stopStreaming is function', typeof App.stopStreaming === 'function'],
-    ['App.exportConversation is function', typeof App.exportConversation === 'function'],
-    ['App.importConversation is function', typeof App.importConversation === 'function'],
-  ];
-  let passed = 0;
-  tests.forEach(([name, cond]) => {
-    if (cond) { passed++; console.log('✓ ' + name); }
-    else { console.error('✗ ' + name); }
-  });
-  console.log(`Passed ${passed}/${tests.length}`);
-  if (passed === tests.length) document.body.innerHTML += '<p style="color:green">All tests passed.</p>';
-  else document.body.innerHTML += '<p style="color:red">Some tests failed.</p>';
-</script>
+  <div id="app"></div>
+  <script src="/static/app.js"></script>
+  <script src="test_app.js"></script>
 </body>
 </html>
