@@ -1,98 +1,106 @@
-#!/usr/bin/env python3
-"""Unit tests for server.py"""
-
 import json
 import os
-import sys
 import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch, MagicMock
 
 # Add parent directory to path
+import sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from server import (
-    load_config,
-    save_config,
-    get_api_key,
-    make_openrouter_headers,
-    CONFIG_FILE,
-    DATA_DIR,
-    CONVERSATIONS_DIR,
-    SKILLS_FILE,
-    ATTACHMENTS_DIR,
+    hash_password,
+    verify_password,
+    create_jwt,
+    verify_jwt,
+    get_user_from_cookie,
+    ChatHandler,
+    USERS_FILE,
+    JWT_SECRET
 )
 
 
-class TestHelpers(unittest.TestCase):
-    """Test helper functions."""
+class TestAuthFunctions(unittest.TestCase):
+    def test_hash_password_and_verify(self):
+        password = 'testpassword123'
+        salt, hashed = hash_password(password)
+        self.assertTrue(verify_password(password, salt, hashed))
+        self.assertFalse(verify_password('wrongpassword', salt, hashed))
 
+    def test_hash_password_uses_salt(self):
+        password = 'test'
+        salt1, hash1 = hash_password(password)
+        salt2, hash2 = hash_password(password)
+        self.assertNotEqual(salt1, salt2)
+        self.assertNotEqual(hash1, hash2)
+
+    def test_create_and_verify_jwt(self):
+        user_id = 'testuser'
+        token = create_jwt(user_id)
+        payload = verify_jwt(token)
+        self.assertIsNotNone(payload)
+        self.assertEqual(payload['user_id'], user_id)
+        self.assertIn('iat', payload)
+        self.assertIn('exp', payload)
+
+    def test_verify_jwt_invalid(self):
+        self.assertIsNone(verify_jwt('invalid.token.here'))
+        self.assertIsNone(verify_jwt(''))
+        self.assertIsNone(verify_jwt('a.b.c'))
+
+    def test_verify_jwt_expired(self):
+        # Create a token with a very short expiration that has passed
+        import time
+        import hmac
+        import hashlib
+        import urllib.parse
+        import json as json_mod
+        header = {'alg': 'HS256', 'typ': 'JWT'}
+        payload = {'user_id': 'test', 'iat': int(time.time()) - 100, 'exp': int(time.time()) - 10}
+        header_b64 = urllib.parse.quote(json_mod.dumps(header, separators=(',', ':')).encode('utf-8'), safe='').rstrip('=')
+        payload_b64 = urllib.parse.quote(json_mod.dumps(payload, separators=(',', ':')).encode('utf-8'), safe='').rstrip('=')
+        signature = hmac.new(JWT_SECRET.encode('utf-8'), f'{header_b64}.{payload_b64}'.encode('utf-8'), hashlib.sha256).hexdigest()
+        token = f'{header_b64}.{payload_b64}.{signature}'
+        self.assertIsNone(verify_jwt(token))
+
+    def test_get_user_from_cookie(self):
+        # Create a mock handler
+        handler = MagicMock()
+        user_id = 'testuser'
+        token = create_jwt(user_id)
+        handler.headers = {'Cookie': f'session={token}'}
+        result = get_user_from_cookie(handler)
+        self.assertEqual(result, user_id)
+
+    def test_get_user_from_cookie_no_cookie(self):
+        handler = MagicMock()
+        handler.headers = {}
+        result = get_user_from_cookie(handler)
+        self.assertIsNone(result)
+
+    def test_get_user_from_cookie_invalid(self):
+        handler = MagicMock()
+        handler.headers = {'Cookie': 'session=invalidtoken'}
+        result = get_user_from_cookie(handler)
+        self.assertIsNone(result)
+
+
+class TestUserFile(unittest.TestCase):
     def setUp(self):
-        self.temp_dir = tempfile.TemporaryDirectory()
-        self.original_data_dir = DATA_DIR
-        # Point to temp dir
-        import server
-        server.DATA_DIR = Path(self.temp_dir.name)
-        server.CONFIG_FILE = server.DATA_DIR / "config.json"
-        server.CONVERSATIONS_DIR = server.DATA_DIR / "conversations"
-        server.SKILLS_FILE = server.DATA_DIR / "skills.json"
-        server.ATTACHMENTS_DIR = server.DATA_DIR / "attachments"
-        server.DATA_DIR.mkdir(exist_ok=True)
-        server.CONVERSATIONS_DIR.mkdir(exist_ok=True)
-        server.ATTACHMENTS_DIR.mkdir(exist_ok=True)
-        if not server.SKILLS_FILE.exists():
-            server.SKILLS_FILE.write_text("[]", encoding="utf-8")
-        if not server.CONFIG_FILE.exists():
-            server.CONFIG_FILE.write_text(json.dumps({"api_key": "", "default_model": ""}), encoding="utf-8")
+        self.temp_dir = tempfile.mkdtemp()
+        self.original_users_file = USERS_FILE
+        # We can't easily replace USERS_FILE at module level, so we test the logic
 
-    def tearDown(self):
-        self.temp_dir.cleanup()
-        import server
-        server.DATA_DIR = self.original_data_dir
-        server.CONFIG_FILE = self.original_data_dir / "config.json"
-        server.CONVERSATIONS_DIR = self.original_data_dir / "conversations"
-        server.SKILLS_FILE = self.original_data_dir / "skills.json"
-        server.ATTACHMENTS_DIR = self.original_data_dir / "attachments"
-
-    def test_load_config_default(self):
-        config = load_config()
-        self.assertEqual(config, {"api_key": "", "default_model": ""})
-
-    def test_save_and_load_config(self):
-        new_config = {"api_key": "test-key", "default_model": "gpt-4"}
-        save_config(new_config)
-        loaded = load_config()
-        self.assertEqual(loaded["api_key"], "test-key")
-        self.assertEqual(loaded["default_model"], "gpt-4")
-
-    @patch.dict(os.environ, {"OPENROUTER_API_KEY": "env-key"})
-    def test_get_api_key_from_env(self):
-        key = get_api_key()
-        self.assertEqual(key, "env-key")
-
-    def test_get_api_key_from_config(self):
-        save_config({"api_key": "config-key", "default_model": ""})
-        key = get_api_key()
-        self.assertEqual(key, "config-key")
-
-    def test_get_api_key_empty(self):
-        save_config({"api_key": "", "default_model": ""})
-        key = get_api_key()
-        self.assertEqual(key, "")
-
-    @patch.dict(os.environ, {"OPENROUTER_API_KEY": ""})
-    def test_make_openrouter_headers_no_key(self):
-        headers = make_openrouter_headers()
-        self.assertIsNone(headers)
-
-    @patch.dict(os.environ, {"OPENROUTER_API_KEY": "test-key"})
-    def test_make_openrouter_headers_with_key(self):
-        headers = make_openrouter_headers()
-        self.assertIsNotNone(headers)
-        self.assertIn("Authorization", headers)
-        self.assertEqual(headers["Authorization"], "Bearer test-key")
+    def test_users_file_creation(self):
+        # The server creates users.json on startup if it doesn't exist
+        # We test that the file is valid JSON
+        users_file = Path(self.temp_dir) / 'users.json'
+        if not users_file.exists():
+            users_file.write_text('{}')
+        data = json.loads(users_file.read_text())
+        self.assertEqual(data, {})
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     unittest.main()

@@ -1,55 +1,53 @@
 import json
 import unittest
 from unittest.mock import patch, MagicMock
-
 import sys
-sys.path.insert(0, '.')
+import os
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-import openrouter
+from server import ChatHandler
 
-class TestOpenRouterBalance(unittest.TestCase):
-    @patch('openrouter.httpx.Client')
-    def test_get_balance_success(self, mock_client_class):
-        mock_client = MagicMock()
-        mock_client_class.return_value.__enter__.return_value = mock_client
-        mock_response = MagicMock()
-        mock_response.json.return_value = {
-            "data": {
-                "credits": 123.456,
-                "usage": 50.0,
-                "total_credits": 173.456
-            }
-        }
-        mock_client.get.return_value = mock_response
 
-        result = openrouter.get_balance("test-api-key")
-        self.assertEqual(result["credits"], 123.456)
-        self.assertEqual(result["usage"], 50.0)
-        self.assertEqual(result["total"], 173.456)
+class TestOpenRouterAPI(unittest.TestCase):
+    def setUp(self):
+        self.handler = ChatHandler.__new__(ChatHandler)
+        self.handler.headers = {}
+        self.handler.rfile = MagicMock()
+        self.handler.wfile = MagicMock()
+        self.handler.send_response = MagicMock()
+        self.handler.send_header = MagicMock()
+        self.handler.end_headers = MagicMock()
 
-    @patch('openrouter.httpx.Client')
-    def test_get_balance_http_error(self, mock_client_class):
-        mock_client = MagicMock()
-        mock_client_class.return_value.__enter__.return_value = mock_client
-        mock_response = MagicMock()
-        mock_response.raise_for_status.side_effect = Exception("HTTP 401")
-        mock_client.get.return_value = mock_response
+    def test_get_api_key_from_env(self):
+        with patch.dict('os.environ', {'OPENROUTER_API_KEY': 'sk-or-test'}):
+            key = self.handler._get_api_key()
+            self.assertEqual(key, 'sk-or-test')
 
-        with self.assertRaises(Exception):
-            openrouter.get_balance("bad-key")
+    def test_get_api_key_from_config(self):
+        import tempfile
+        import os
+        from pathlib import Path
+        from server import CONFIG_FILE
+        
+        # Temporarily change CONFIG_FILE
+        original = CONFIG_FILE
+        try:
+            with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
+                json.dump({'api_key': 'sk-or-config'}, f)
+                temp_path = f.name
+            
+            # Monkey-patch CONFIG_FILE
+            import server
+            server.CONFIG_FILE = Path(temp_path)
+            
+            with patch.dict('os.environ', {}, clear=True):
+                key = self.handler._get_api_key()
+                self.assertEqual(key, 'sk-or-config')
+            
+            os.unlink(temp_path)
+        finally:
+            server.CONFIG_FILE = original
 
-    @patch('openrouter.httpx.Client')
-    def test_get_balance_missing_data(self, mock_client_class):
-        mock_client = MagicMock()
-        mock_client_class.return_value.__enter__.return_value = mock_client
-        mock_response = MagicMock()
-        mock_response.json.return_value = {}
-        mock_client.get.return_value = mock_response
-
-        result = openrouter.get_balance("test-api-key")
-        self.assertEqual(result["credits"], 0)
-        self.assertEqual(result["usage"], 0)
-        self.assertEqual(result["total"], 0)
 
 if __name__ == '__main__':
     unittest.main()
