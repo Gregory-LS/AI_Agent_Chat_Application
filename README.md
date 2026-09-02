@@ -27,7 +27,7 @@ Open http://localhost:8000 in your browser.
 | Variable | Default | Description |
 |---|---|---|
 | `OPENROUTER_API_KEY` | — | Your OpenRouter API key (required) |
-| `HOST` | `127.0.0.1` | Server bind address |
+| `HOST` | `[IP_ADDRESS]` | Server bind address |
 | `PORT` | `8000` | Server port |
 
 The API key can also be set via the Settings UI (persisted to `data/config.json`).
