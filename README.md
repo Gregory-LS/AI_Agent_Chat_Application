@@ -50,7 +50,8 @@ The API key can also be set via the Settings UI (persisted to `data/config.json`
 ├── tests/
 │   ├── test_app.html
 │   ├── test_app.js
-│   └── test_styles.py
+│   ├── test_styles.py
+│   └── test_server.py     # Backend unit tests
 └── README.md
 ```
 
