@@ -14,6 +14,7 @@ A Claude-style chat application powered by OpenRouter. Chat with hundreds of mod
 - **Export/Import** — download conversations as JSON or Markdown, restore from backup
 - **Theme toggle** — switch between light and dark themes via the Settings drawer; preference is saved to localStorage
 - **Keyboard shortcuts** — navigate and control the app without leaving the keyboard (see below)
+- **Authentication** — optional password-based authentication to protect the app (see Configuration)
 
 ## Quick start
 
@@ -32,10 +33,15 @@ The `data/` directory (config, conversations, skills, attachments) is created au
 | Variable | Default | Description |
 |---|---|---|
 | `OPENROUTER_API_KEY` | — | Your OpenRouter API key (required) |
+| `AUTH_PASSWORD` | — | Password to enable authentication (optional) |
 | `HOST` | `[IP_ADDRESS]` | Server bind address |
 | `PORT` | `8000` | Server port |
 
-The API key can also be set via the Settings UI (persisted to `data/config.json`).
+The API key and auth password can also be set via the Settings UI (persisted to `data/config.json`).
+
+### Authentication
+
+By default, the app runs without authentication. To enable password protection, set the `AUTH_PASSWORD` environment variable or add `"auth_password": "yourpassword"` to `data/config.json`. When enabled, users must log in before accessing the chat interface.
 
 ## File layout
 
@@ -44,10 +50,11 @@ The API key can also be set via the Settings UI (persisted to `data/config.json`
 ├── server.py              # Python backend (stdlib + httpx)
 ├── static/
 │   ├── index.html         # Single-page app markup
+│   ├── login.html         # Login page (when auth enabled)
 │   ├── styles.css         # Dark/light theme CSS
 │   └── app.js             # Frontend JavaScript with state management and streaming fetch
 ├── data/
-│   ├── config.json        # API key, default model
+│   ├── config.json        # API key, default model, auth password
 │   ├── conversations/     # Per-conversation JSON files
 │   ├── skills.json        # Custom skills
 │   └── attachments/       # Uploaded images
@@ -64,8 +71,10 @@ The API key can also be set via the Settings UI (persisted to `data/config.json`
 
 | Method | Path | Description |
 |---|---|---|
-| GET | `/api/models` | List OpenRouter models |
-| GET | `/api/balance` | Check API key balance (credits, usage, total) |
+| POST | `/api/login` | Authenticate with password (returns session cookie) |
+| POST | `/api/logout` | Log out (clears session) |
+| GET | `/api/models` | List OpenRouter models (requires auth if enabled) |
+| GET | `/api/balance` | Check API key balance |
 | GET/PUT | `/api/config` | Read/write settings |
 | GET/POST | `/api/conversations` | List/create conversations |
 | GET/PATCH/DELETE | `/api/conversations/:id` | Get/update/delete conversation |
@@ -74,11 +83,9 @@ The API key can also be set via the Settings UI (persisted to `data/config.json`
 | GET/POST | `/api/skills` | List/create skills |
 | PATCH/DELETE | `/api/skills/:id` | Update/delete skill |
 | POST | `/api/attachments` | Upload an attachment |
-| POST | `/api/chat` | Stream a chat response (SSE) — see below |
+| POST | `/api/chat` | Stream a chat response (SSE) |
 
-The `/api/chat` endpoint returns a Server-Sent Events (SSE) stream. Each event has type `chunk` (partial content), `done` (final), `error` (failure), or `usage` (token usage). The frontend `streamFetch` function in `app.js` processes these events, updating the UI incrementally as chunks arrive, and supports cancellation via an `AbortController`.
-
-The `/api/balance` endpoint returns a JSON object with `credits`, `usage`, and `total` fields representing the OpenRouter account balance.
+All `/api/` endpoints (except `/api/login`) require authentication if `AUTH_PASSWORD` is set.
 
 ## Keyboard shortcuts
 
@@ -125,3 +132,5 @@ The UI uses CSS custom properties for theming. Two themes are supported:
 - **Dark** — dark backgrounds, light text, light blue accent
 
 Toggle theme via the settings drawer or `data-theme` attribute on `<html>`. The preference is saved in `localStorage` and persists across sessions.
+
+--- End: README.md ---
