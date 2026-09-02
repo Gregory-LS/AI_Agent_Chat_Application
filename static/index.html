@@ -4,59 +4,61 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Agentic Chat</title>
-<link rel="stylesheet" href="/styles.css">
+<link rel="stylesheet" href="styles.css">
 </head>
 <body>
 <div id="app">
-  <aside id="sidebar">
-    <div class="sidebar-header">
-      <button id="new-chat-btn" class="btn btn-primary">+ New Chat</button>
-      <input type="text" id="search-input" placeholder="Search conversations..." class="search-input">
-    </div>
-    <div id="conversation-list"></div>
-    <div class="sidebar-footer">
-      <button id="settings-btn" class="btn btn-icon" title="Settings">⚙️</button>
-      <button id="skills-btn" class="btn btn-icon" title="Skills">🧠</button>
-    </div>
-  </aside>
-
-  <main id="chat-area">
-    <div id="message-container"></div>
-    <div id="composer-area">
-      <textarea id="composer" placeholder="Type a message..." rows="3"></textarea>
-      <div class="composer-actions">
-        <button id="send-btn" class="btn btn-primary">Send</button>
-        <button id="stop-btn" class="btn btn-danger" style="display:none;">Stop</button>
-      </div>
-    </div>
-  </main>
-
-  <div id="settings-drawer" class="drawer">
-    <div class="drawer-header">
-      <h2>Settings</h2>
-      <button id="close-settings-btn" class="btn btn-icon">✕</button>
-    </div>
-    <div class="drawer-body">
-      <label for="api-key-input">API Key</label>
-      <input type="password" id="api-key-input" placeholder="sk-or-...">
-      <label for="default-model-select">Default Model</label>
-      <select id="default-model-select"></select>
-      <button id="theme-toggle" class="btn">Toggle Theme</button>
-      <div id="balance-info">Balance: —</div>
-      <button id="logout-btn" class="btn btn-danger">Logout</button>
-    </div>
-  </div>
-
-  <div id="skills-drawer" class="drawer">
-    <div class="drawer-header">
-      <h2>Skills</h2>
-      <button id="close-skills-btn" class="btn btn-icon">✕</button>
-    </div>
-    <div class="drawer-body" id="skills-list">
-      <!-- Skills will be rendered here -->
-    </div>
-  </div>
+    <aside id="sidebar">
+        <div id="sidebar-header">
+            <h2>Conversations</h2>
+            <button id="new-conversation-btn" title="New conversation (Ctrl+Shift+N)">+</button>
+        </div>
+        <div id="conversation-list"></div>
+        <div id="sidebar-footer">
+            <button id="settings-btn" title="Settings (Ctrl+Shift+,)">Settings</button>
+        </div>
+    </aside>
+    <main id="main-content">
+        <header id="chat-header">
+            <select id="model-picker"></select>
+        </header>
+        <div id="message-container"></div>
+        <footer id="composer-area">
+            <textarea id="composer" placeholder="Type a message... (Ctrl+Shift+O to focus)"></textarea>
+            <button id="send-btn">Send</button>
+        </footer>
+    </main>
 </div>
-<script src="/app.js"></script>
+
+<!-- Settings Modal -->
+<div id="settings-modal" class="modal" style="display:none;">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h2>Settings</h2>
+            <button id="settings-close" class="close-btn">&times;</button>
+        </div>
+        <div class="modal-body">
+            <label for="settings-api-key">OpenRouter API Key</label>
+            <input type="password" id="settings-api-key" placeholder="sk-or-...">
+            
+            <label for="settings-default-model">Default Model</label>
+            <select id="settings-default-model">
+                <option value="">None (use first available)</option>
+            </select>
+            
+            <label for="settings-theme">Theme</label>
+            <select id="settings-theme">
+                <option value="light">Light</option>
+                <option value="dark">Dark</option>
+            </select>
+        </div>
+        <div class="modal-footer">
+            <button id="settings-cancel">Cancel</button>
+            <button id="settings-save" class="primary">Save</button>
+        </div>
+    </div>
+</div>
+
+<script src="app.js"></script>
 </body>
 </html>

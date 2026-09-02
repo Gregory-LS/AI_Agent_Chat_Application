@@ -47,7 +47,7 @@ The API key can also be set via the Settings UI (persisted to `data/config.json`
 │   ├── styles.css         # Dark/light theme CSS
 │   └── app.js             # Frontend JavaScript with state management and streaming fetch
 ├── data/
-│   ├── config.json        # API key, default model
+│   ├── config.json        # API key, default model, theme
 │   ├── conversations/     # Per-conversation JSON files
 │   ├── skills.json        # Custom skills
 │   └── attachments/       # Uploaded images
@@ -55,8 +55,9 @@ The API key can also be set via the Settings UI (persisted to `data/config.json`
 │   ├── test_app.html      # Test runner for app.js
 │   ├── test_app.js        # Unit tests for app.js state management and streaming
 │   ├── test_openrouter.py # OpenRouter API unit tests
-│   ├── test_styles.py
-│   └── test_server.py     # Backend unit tests
+│   ├── test_server.py     # Backend unit tests
+│   ├── test_settings.js   # Settings modal unit tests
+│   └── test_styles.py
 └── README.md
 ```
 
@@ -115,7 +116,7 @@ python -m pytest tests/
 For frontend tests, open `tests/test_app.html` in a browser or run with Node.js:
 
 ```bash
-node tests/test_app.js
+node tests/test_settings.js
 ```
 
 ## Styling
@@ -125,3 +126,12 @@ The UI uses CSS custom properties for theming. Two themes are supported:
 - **Dark** — dark backgrounds, light text, light blue accent
 
 Toggle theme via the settings drawer or `data-theme` attribute on `<html>`. The preference is saved in `localStorage` and persists across sessions.
+
+## Settings Modal
+
+The settings modal provides a user interface for configuring:
+- **OpenRouter API Key** — set or update your API key (stored in `data/config.json`)
+- **Default Model** — choose which model to use by default for new conversations
+- **Theme** — toggle between light and dark themes
+
+The modal is accessible via the "Settings" button in the sidebar or the keyboard shortcut `Ctrl+Shift+,`.
