@@ -10,9 +10,9 @@ A Claude-style chat application powered by OpenRouter. Chat with hundreds of mod
 - **Skills** — enable/disable built-in skills or create your own custom system prompts
 - **Conversations** — sidebar with search, rename, delete, auto-title from first message
 - **Attachments** — upload images (sent to vision-capable models), text/code files (inlined as context)
-- **Settings** — API key management, default model, dark/light theme toggle
+- **Settings** — API key management, default model, dark/light theme toggle, accessible via a drawer and a modal
 - **Export/Import** — download conversations as JSON or Markdown, restore from backup
-- **Theme toggle** — switch between light and dark themes via the Settings drawer; preference is saved to localStorage
+- **Theme toggle** — switch between light and dark themes via the Settings drawer or modal; preference is saved to localStorage
 - **Keyboard shortcuts** — navigate and control the app without leaving the keyboard (see below)
 
 ## Quick start
@@ -56,7 +56,8 @@ The API key can also be set via the Settings UI (persisted to `data/config.json`
 │   ├── test_app.js        # Unit tests for app.js state management and streaming
 │   ├── test_openrouter.py # OpenRouter API unit tests
 │   ├── test_styles.py
-│   └── test_server.py     # Backend unit tests
+│   ├── test_server.py     # Backend unit tests
+│   └── test_settings.js   # Settings modal tests
 └── README.md
 ```
 
@@ -118,10 +119,16 @@ For frontend tests, open `tests/test_app.html` in a browser or run with Node.js:
 node tests/test_app.js
 ```
 
+For settings modal tests, open `tests/test_app.html` in a browser.
+
 ## Styling
 
 The UI uses CSS custom properties for theming. Two themes are supported:
 - **Light** (default) — white backgrounds, dark text, blue accent
 - **Dark** — dark backgrounds, light text, light blue accent
 
-Toggle theme via the settings drawer or `data-theme` attribute on `<html>`. The preference is saved in `localStorage` and persists across sessions.
+Toggle theme via the settings drawer or modal, or via the `data-theme` attribute on `<html>`. The preference is saved in `localStorage` and persists across sessions.
+
+## Settings Modal
+
+The settings modal provides an alternative way to configure the application. It can be opened via the settings button in the sidebar (same as the drawer) or by clicking the settings button. The modal contains fields for API key, default model, and theme selection. Changes are saved by clicking "Save Settings" and persisted to the server configuration.

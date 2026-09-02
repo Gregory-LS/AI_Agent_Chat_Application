@@ -11,9 +11,9 @@ from http import HTTPStatus
 
 import httpx
 
-from openrouter import OpenRouterClient
+from openrouter import get_models, get_balance, chat
 
-HOST = os.environ.get('HOST', '0.0.0.0')
+HOST = os.environ.get('HOST', '[IP_ADDRESS]')
 PORT = int(os.environ.get('PORT', 8000))
 DATA_DIR = 'data'
 CONFIG_FILE = os.path.join(DATA_DIR, 'config.json')
@@ -78,6 +78,7 @@ class ChatHandler(http.server.BaseHTTPRequestHandler):
         self.send_response(status)
         self.send_header('Content-Type', 'application/json')
         self.send_header('Content-Length', str(len(body)))
+        self.send_header('Access-Control-Allow-Origin', '*')
         self.end_headers()
         self.wfile.write(body)
 
@@ -91,36 +92,30 @@ class ChatHandler(http.server.BaseHTTPRequestHandler):
         query = urllib.parse.parse_qs(parsed.query)
         return path, query
 
-    def _get_client(self):
-        config = load_config()
-        api_key = config.get('api_key', '')
-        return OpenRouterClient(api_key=api_key)
-
     def do_OPTIONS(self):
         self.send_response(204)
-        self._cors_headers()
-        self.end_headers()
-
-    def _cors_headers(self):
         self.send_header('Access-Control-Allow-Origin', '*')
         self.send_header('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS')
         self.send_header('Access-Control-Allow-Headers', 'Content-Type')
+        self.end_headers()
 
     def do_GET(self):
         path, query = self._parse_path()
 
         if path == '/api/models':
             try:
-                client = self._get_client()
-                models = client.list_models()
+                config = load_config()
+                api_key = config.get('api_key', '')
+                models = get_models(api_key)
                 self._send_json(models)
             except Exception as e:
                 self._send_json({'error': str(e)}, 500)
 
         elif path == '/api/balance':
             try:
-                client = self._get_client()
-                balance = client.check_balance()
+                config = load_config()
+                api_key = config.get('api_key', '')
+                balance = get_balance(api_key)
                 self._send_json(balance)
             except Exception as e:
                 self._send_json({'error': str(e)}, 500)
@@ -142,11 +137,17 @@ class ChatHandler(http.server.BaseHTTPRequestHandler):
             with open(conv_path) as f:
                 conv = json.load(f)
             if fmt == 'markdown':
-                md = self._conv_to_markdown(conv)
+                md_lines = [f"# {conv.get('title', 'Conversation')}\n"]
+                for msg in conv.get('messages', []):
+                    role = msg.get('role', 'user')
+                    content = msg.get('content', '')
+                    md_lines.append(f"**{role.capitalize()}:** {content}\n")
+                md = '\n'.join(md_lines)
                 body = md.encode('utf-8')
                 self.send_response(200)
                 self.send_header('Content-Type', 'text/markdown; charset=utf-8')
                 self.send_header('Content-Length', str(len(body)))
+                self.send_header('Access-Control-Allow-Origin', '*')
                 self.end_headers()
                 self.wfile.write(body)
             else:
@@ -193,6 +194,7 @@ class ChatHandler(http.server.BaseHTTPRequestHandler):
             self.send_response(200)
             self.send_header('Content-Type', content_type)
             self.send_header('Content-Length', str(len(body)))
+            self.send_header('Access-Control-Allow-Origin', '*')
             self.end_headers()
             self.wfile.write(body)
         except FileNotFoundError:
@@ -248,13 +250,13 @@ class ChatHandler(http.server.BaseHTTPRequestHandler):
         elif path == '/api/skills':
             try:
                 body = json.loads(self._read_body())
-                skills = load_skills()
                 skill = {
                     'id': str(uuid.uuid4()),
                     'name': body.get('name', 'New skill'),
                     'prompt': body.get('prompt', ''),
-                    'builtin': body.get('builtin', False)
+                    'enabled': body.get('enabled', True)
                 }
+                skills = load_skills()
                 skills.append(skill)
                 save_skills(skills)
                 self._send_json(skill, 201)
@@ -265,22 +267,34 @@ class ChatHandler(http.server.BaseHTTPRequestHandler):
             try:
                 content_type = self.headers.get('Content-Type', '')
                 if 'multipart/form-data' in content_type:
-                    import cgi
-                    form = cgi.FieldStorage(
-                        fp=io.BytesIO(self._read_body()),
-                        headers=self.headers,
-                        environ={'REQUEST_METHOD': 'POST'}
-                    )
-                    file_item = form['file']
-                    if file_item.filename:
-                        ext = os.path.splitext(file_item.filename)[1]
-                        fname = str(uuid.uuid4()) + ext
-                        fpath = os.path.join(ATTACHMENTS_DIR, fname)
-                        with open(fpath, 'wb') as f:
-                            f.write(file_item.file.read())
-                        self._send_json({'filename': fname, 'original': file_item.filename}, 201)
-                    else:
-                        self._send_json({'error': 'No file provided'}, 400)
+                    # Parse multipart
+                    boundary = content_type.split('boundary=')[1].strip()
+                    body = self._read_body()
+                    # Simple multipart parser
+                    parts = body.split(b'--' + boundary.encode())
+                    for part in parts:
+                        if b'Content-Disposition' in part:
+                            # Extract filename
+                            filename_match = re.search(rb'filename="([^"]+)"', part)
+                            if filename_match:
+                                filename = filename_match.group(1).decode()
+                                # Find blank line separating headers from body
+                                header_end = part.find(b'\r\n\r\n')
+                                if header_end != -1:
+                                    file_data = part[header_end+4:].rstrip(b'\r\n--')
+                                    # Save file
+                                    file_id = str(uuid.uuid4())
+                                    ext = os.path.splitext(filename)[1]
+                                    saved_name = f"{file_id}{ext}"
+                                    with open(os.path.join(ATTACHMENTS_DIR, saved_name), 'wb') as f:
+                                        f.write(file_data)
+                                    self._send_json({
+                                        'id': file_id,
+                                        'filename': filename,
+                                        'path': f'/attachments/{saved_name}'
+                                    }, 201)
+                                    return
+                    self._send_json({'error': 'No file found in upload'}, 400)
                 else:
                     self._send_json({'error': 'Unsupported content type'}, 400)
             except Exception as e:
@@ -289,65 +303,57 @@ class ChatHandler(http.server.BaseHTTPRequestHandler):
         elif path == '/api/chat':
             try:
                 body = json.loads(self._read_body())
-                messages = body.get('messages', [])
                 model = body.get('model', '')
-                stream = body.get('stream', True)
-
+                messages = body.get('messages', [])
                 config = load_config()
                 api_key = config.get('api_key', '')
-                if not api_key:
-                    self._send_json({'error': 'API key not configured. Set it in Settings.'}, 400)
-                    return
-
-                client = OpenRouterClient(api_key=api_key)
-
-                # Check for enabled skills
+                
+                # Get enabled skills and prepend system messages
                 skills = load_skills()
                 enabled_skills = [s for s in skills if s.get('enabled', False)]
-                system_prompts = [s['prompt'] for s in enabled_skills if s.get('prompt')]
-
-                if system_prompts:
-                    system_content = '\n\n'.join(system_prompts)
-                    messages.insert(0, {'role': 'system', 'content': system_content})
-
-                if stream:
-                    self.send_response(200)
-                    self.send_header('Content-Type', 'text/event-stream')
-                    self.send_header('Cache-Control', 'no-cache')
-                    self.send_header('Connection', 'keep-alive')
-                    self._cors_headers()
-                    self.end_headers()
-
-                    for event in client.chat_stream(messages, model=model):
-                        data = json.dumps(event)
-                        line = f'data: {data}\n\n'
-                        try:
-                            self.wfile.write(line.encode('utf-8'))
-                            self.wfile.flush()
-                        except BrokenPipeError:
-                            break
-                else:
-                    response = client.chat(messages, model=model)
-                    self._send_json(response)
-
-            except Exception as e:
-                if stream:
-                    line = f'data: {json.dumps({"type": "error", "content": str(e)})}\n\n'
-                    try:
-                        self.wfile.write(line.encode('utf-8'))
+                skill_prompts = [s['prompt'] for s in enabled_skills if s.get('prompt')]
+                
+                # Prepend skill prompts as system messages (in reverse order so first skill is first system message)
+                system_messages = [{'role': 'system', 'content': p} for p in skill_prompts]
+                all_messages = system_messages + messages
+                
+                self.send_response(200)
+                self.send_header('Content-Type', 'text/event-stream')
+                self.send_header('Cache-Control', 'no-cache')
+                self.send_header('Access-Control-Allow-Origin', '*')
+                self.end_headers()
+                
+                for chunk in chat(api_key, model, all_messages):
+                    if chunk == '[DONE]':
+                        self.wfile.write(b'data: [DONE]\n\n')
                         self.wfile.flush()
-                    except BrokenPipeError:
-                        pass
-                else:
-                    self._send_json({'error': str(e)}, 500)
+                    else:
+                        try:
+                            data = json.loads(chunk)
+                            if 'choices' in data and len(data['choices']) > 0:
+                                delta = data['choices'][0].get('delta', {})
+                                content = delta.get('content', '')
+                                if content:
+                                    event = json.dumps({'type': 'chunk', 'content': content})
+                                    self.wfile.write(f'data: {event}\n\n'.encode())
+                                    self.wfile.flush()
+                        except json.JSONDecodeError:
+                            pass
+                
+                # Send done event
+                self.wfile.write(b'data: {"type": "done"}\n\n')
+                self.wfile.flush()
+                
+            except Exception as e:
+                error_event = json.dumps({'type': 'error', 'error': str(e)})
+                self.wfile.write(f'data: {error_event}\n\n'.encode())
+                self.wfile.flush()
 
         else:
-            self.send_response(404)
-            self.end_headers()
+            self._send_json({'error': 'Not found'}, 404)
 
     def do_PUT(self):
         path, _ = self._parse_path()
-
         if path == '/api/config':
             try:
                 body = json.loads(self._read_body())
@@ -358,12 +364,11 @@ class ChatHandler(http.server.BaseHTTPRequestHandler):
             except Exception as e:
                 self._send_json({'error': str(e)}, 400)
         else:
-            self.send_response(404)
-            self.end_headers()
+            self._send_json({'error': 'Not found'}, 404)
 
     def do_PATCH(self):
         path, _ = self._parse_path()
-
+        
         if path.startswith('/api/conversations/'):
             conv_id = path.split('/')[3]
             conv_path = os.path.join(CONVERSATIONS_DIR, f'{conv_id}.json')
@@ -397,12 +402,11 @@ class ChatHandler(http.server.BaseHTTPRequestHandler):
                 self._send_json({'error': str(e)}, 400)
 
         else:
-            self.send_response(404)
-            self.end_headers()
+            self._send_json({'error': 'Not found'}, 404)
 
     def do_DELETE(self):
         path, _ = self._parse_path()
-
+        
         if path.startswith('/api/conversations/'):
             conv_id = path.split('/')[3]
             conv_path = os.path.join(CONVERSATIONS_DIR, f'{conv_id}.json')
@@ -419,28 +423,15 @@ class ChatHandler(http.server.BaseHTTPRequestHandler):
             if not skill:
                 self._send_json({'error': 'Skill not found'}, 404)
                 return
-            skills = [s for s in skills if s['id'] != skill_id]
+            skills.remove(skill)
             save_skills(skills)
             self._send_json({'status': 'deleted'})
 
         else:
-            self.send_response(404)
-            self.end_headers()
-
-    def _conv_to_markdown(self, conv):
-        md = f"# {conv.get('title', 'Conversation')}\n\n"
-        for msg in conv.get('messages', []):
-            role = msg.get('role', 'unknown')
-            content = msg.get('content', '')
-            md += f"**{role.capitalize()}:** {content}\n\n"
-        return md
-
-
-def run():
-    server = http.server.HTTPServer((HOST, PORT), ChatHandler)
-    print(f'Server running on http://{HOST}:{PORT}')
-    server.serve_forever()
+            self._send_json({'error': 'Not found'}, 404)
 
 
 if __name__ == '__main__':
-    run()
+    server = http.server.HTTPServer((HOST, PORT), ChatHandler)
+    print(f'Server running on http://{HOST}:{PORT}')
+    server.serve_forever()
