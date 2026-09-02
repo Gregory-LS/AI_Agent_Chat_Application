@@ -6,6 +6,7 @@ A Claude-style chat application powered by OpenRouter. Chat with hundreds of mod
 
 - **Chat** — stream responses, stop mid-stream, copy messages, message metadata
 - **Model picker** — browse all OpenRouter models, grouped by provider, searchable, with context/pricing info
+- **Balance check** — view your OpenRouter account balance (credits remaining) in the settings drawer
 - **Skills** — enable/disable built-in skills or create your own custom system prompts
 - **Conversations** — sidebar with search, rename, delete, auto-title from first message
 - **Attachments** — upload images (sent to vision-capable models), text/code files (inlined as context)
@@ -29,7 +30,7 @@ The `data/` directory (config, conversations, skills, attachments) is created au
 | Variable | Default | Description |
 |---|---|---|
 | `OPENROUTER_API_KEY` | — | Your OpenRouter API key (required) |
-| `HOST` | `0.0.0.0` | Server bind address |
+| `HOST` | `[IP_ADDRESS]` | Server bind address |
 | `PORT` | `8000` | Server port |
 
 The API key can also be set via the Settings UI (persisted to `data/config.json`).
@@ -62,7 +63,7 @@ The API key can also be set via the Settings UI (persisted to `data/config.json`
 | Method | Path | Description |
 |---|---|---|
 | GET | `/api/models` | List OpenRouter models |
-| GET | `/api/balance` | Check API key balance |
+| GET | `/api/balance` | Check API key balance (credits, usage, total) |
 | GET/PUT | `/api/config` | Read/write settings |
 | GET/POST | `/api/conversations` | List/create conversations |
 | GET/PATCH/DELETE | `/api/conversations/:id` | Get/update/delete conversation |
@@ -74,6 +75,8 @@ The API key can also be set via the Settings UI (persisted to `data/config.json`
 | POST | `/api/chat` | Stream a chat response (SSE) — see below |
 
 The `/api/chat` endpoint returns a Server-Sent Events (SSE) stream. Each event has type `chunk` (partial content), `done` (final), `error` (failure), or `usage` (token usage).
+
+The `/api/balance` endpoint returns a JSON object with `credits`, `usage`, and `total` fields representing the OpenRouter account balance.
 
 ## Requirements
 
