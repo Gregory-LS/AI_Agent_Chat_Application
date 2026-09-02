@@ -11,7 +11,6 @@ A Claude-style chat application powered by OpenRouter. Chat with hundreds of mod
 - **Conversations** — sidebar with search, rename, delete, auto-title from first message
 - **Attachments** — upload images (sent to vision-capable models), text/code files (inlined as context)
 - **Settings** — API key management, default model, dark/light theme
-- **Logout** — clear stored API key via the settings UI
 - **Export/Import** — download conversations as JSON or Markdown, restore from backup
 
 ## Quick start
@@ -49,13 +48,13 @@ The API key can also be set via the Settings UI (persisted to `data/config.json`
 │   ├── config.json        # API key, default model
 │   ├── conversations/     # Per-conversation JSON files
 │   ├── skills.json        # Custom skills
-│   └── attachments/       # Uploaded images
+│   └── attachments/       # Uploaded images and text files
 ├── tests/
 │   ├── test_app.html      # Test runner for app.js
 │   ├── test_app.js        # Unit tests for app.js state management and streaming
 │   ├── test_openrouter.py # OpenRouter API unit tests
 │   ├── test_styles.py
-│   └── test_server.py     # Backend unit tests
+│   └── test_server.py     # Backend unit tests (includes attachment tests)
 └── README.md
 ```
 
@@ -72,13 +71,14 @@ The API key can also be set via the Settings UI (persisted to `data/config.json`
 | GET | `/api/conversations/:id/export?format=json|markdown` | Export |
 | GET/POST | `/api/skills` | List/create skills |
 | PATCH/DELETE | `/api/skills/:id` | Update/delete skill |
-| POST | `/api/attachments` | Upload an attachment |
+| POST | `/api/attachments` | Upload an attachment (multipart/form-data) — see below |
 | POST | `/api/chat` | Stream a chat response (SSE) — see below |
-| **POST** | **`/api/logout`** | **Clear the stored API key (logout)** |
 
 The `/api/chat` endpoint returns a Server-Sent Events (SSE) stream. Each event has type `chunk` (partial content), `done` (final), `error` (failure), or `usage` (token usage). The frontend `streamFetch` function in `app.js` processes these events, updating the UI incrementally as chunks arrive, and supports cancellation via an `AbortController`.
 
 The `/api/balance` endpoint returns a JSON object with `credits`, `usage`, and `total` fields representing the OpenRouter account balance.
+
+The `/api/attachments` endpoint accepts `multipart/form-data` uploads. Supported file types include common image formats (PNG, JPEG, GIF, WebP) and text-based files (plain text, HTML, CSS, JavaScript, JSON, XML, Python, Markdown, CSV). Maximum file size is 10 MB. Returns a JSON object with `filename`, `original_name`, `mime_type`, and `size`.
 
 ## Requirements
 

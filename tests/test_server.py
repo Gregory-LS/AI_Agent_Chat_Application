@@ -1,103 +1,180 @@
 import json
 import os
+import sys
 import tempfile
 import unittest
 from unittest.mock import patch, MagicMock
-import sys
+from io import BytesIO
 
-# Add root to path for imports
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+# Add parent directory to path
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-# We'll test the handler methods directly by simulating requests
-# Since server.py uses http.server, we test the logic by patching the handler
+from http.server import HTTPServer
+from server import ChatHandler, ATTACHMENTS_DIR, ALLOWED_MIME_TYPES, MAX_ATTACHMENT_SIZE
 
-class TestServerLogout(unittest.TestCase):
+
+class TestAttachmentHandling(unittest.TestCase):
+    """Tests for attachment upload endpoint."""
+
     def setUp(self):
-        # Create a temporary data directory
-        self.test_dir = tempfile.mkdtemp()
-        self.patcher = patch("server.DATA_DIR", self.test_dir)
+        self.temp_dir = tempfile.mkdtemp()
+        self.attachments_dir = os.path.join(self.temp_dir, 'attachments')
+        os.makedirs(self.attachments_dir, exist_ok=True)
+
+        # Patch ATTACHMENTS_DIR
+        self.patcher = patch('server.ATTACHMENTS_DIR', self.attachments_dir)
         self.patcher.start()
-        self.addCleanup(self.patcher.stop)
-        self.addCleanup(lambda: shutil.rmtree(self.test_dir, ignore_errors=True))
 
-        # Re-import server with patched DATA_DIR
-        import importlib
-        import server
-        importlib.reload(server)
-        self.server = server
+        # Create a mock request handler
+        self.handler = ChatHandler.__new__(ChatHandler)
+        self.handler.path = '/api/attachments'
+        self.handler.headers = {}
+        self.handler.rfile = BytesIO()
+        self.handler.wfile = BytesIO()
+        self.handler.send_response = MagicMock()
+        self.handler.send_header = MagicMock()
+        self.handler.end_headers = MagicMock()
 
-        # Create a minimal config
-        config = {"api_key": "sk-or-test-key-12345678", "default_model": "gpt-4", "theme": "light"}
-        with open(os.path.join(self.test_dir, "config.json"), "w") as f:
-            json.dump(config, f)
+    def tearDown(self):
+        self.patcher.stop()
+        import shutil
+        shutil.rmtree(self.temp_dir)
 
-        # Create a mock handler
-        self.handler = server.ChatHandler
-        self.mock_request = MagicMock()
-        self.mock_request.makefile = MagicMock()
-        self.mock_request.makefile.return_value = MagicMock()
-        self.handler_instance = self.handler(self.mock_request, ("127.0.0.1", 12345), None)
-        self.handler_instance.path = "/api/logout"
-        self.handler_instance.headers = MagicMock()
-        self.handler_instance.rfile = MagicMock()
-        self.handler_instance.wfile = MagicMock()
-        self.handler_instance.send_response = MagicMock()
-        self.handler_instance.send_header = MagicMock()
-        self.handler_instance.end_headers = MagicMock()
+    def _build_multipart_body(self, file_data, filename, field_name='file', content_type='text/plain'):
+        """Build a multipart/form-data body."""
+        boundary = '----TestBoundary12345'
+        body = b''
+        body += f'--{boundary}\r\n'.encode()
+        body += f'Content-Disposition: form-data; name="{field_name}"; filename="{filename}"\r\n'.encode()
+        body += f'Content-Type: {content_type}\r\n'.encode()
+        body += b'\r\n'
+        body += file_data
+        body += b'\r\n'
+        body += f'--{boundary}--\r\n'.encode()
+        return body, boundary
 
-    def test_logout_clears_api_key(self):
-        """Test that POST /api/logout clears the API key in config.json."""
-        # Verify initial state
-        config = self.server.load_config()
-        self.assertEqual(config["api_key"], "sk-or-test-key-12345678")
+    def test_upload_success(self):
+        """Test successful file upload."""
+        file_data = b'Hello, world!'
+        body, boundary = self._build_multipart_body(file_data, 'test.txt', content_type='text/plain')
+        self.handler.headers = {
+            'Content-Type': f'multipart/form-data; boundary={boundary}',
+            'Content-Length': str(len(body))
+        }
+        self.handler.rfile = BytesIO(body)
 
-        # Call logout
-        self.handler_instance.handle_logout()
+        # Mock _send_json to capture output
+        self.handler._send_json = MagicMock()
 
-        # Verify config was updated
-        config = self.server.load_config()
-        self.assertEqual(config["api_key"], "")
+        self.handler.do_POST()
 
-        # Verify response
-        self.handler_instance.send_response.assert_called_with(200)
-        self.handler_instance.send_header.assert_called_with("Content-Type", "application/json")
-        self.handler_instance.end_headers.assert_called_once()
+        # Check that _send_json was called with success
+        args, kwargs = self.handler._send_json.call_args
+        response_data = args[0]
+        status = args[1] if len(args) > 1 else kwargs.get('status', 200)
 
-        # Get the response body
-        written = self.handler_instance.wfile.write.call_args[0][0]
-        response = json.loads(written.decode())
-        self.assertEqual(response["status"], "logged_out")
-        self.assertIn("API key cleared", response["message"])
+        self.assertEqual(status, 201)
+        self.assertIn('filename', response_data)
+        self.assertEqual(response_data['original_name'], 'test.txt')
+        self.assertEqual(response_data['mime_type'], 'text/plain')
+        self.assertEqual(response_data['size'], 13)
 
-    def test_logout_with_no_api_key(self):
-        """Test logout when no API key is set (should still succeed)."""
-        # Set empty key
-        config = self.server.load_config()
-        config["api_key"] = ""
-        self.server.save_config(config)
+        # Verify file was saved
+        saved_path = os.path.join(self.attachments_dir, response_data['filename'])
+        self.assertTrue(os.path.exists(saved_path))
+        with open(saved_path, 'rb') as f:
+            self.assertEqual(f.read(), file_data)
 
-        # Call logout
-        self.handler_instance.handle_logout()
+    def test_upload_no_file(self):
+        """Test upload with no file part."""
+        boundary = '----TestBoundary12345'
+        body = f'--{boundary}--\r\n'.encode()
+        self.handler.headers = {
+            'Content-Type': f'multipart/form-data; boundary={boundary}',
+            'Content-Length': str(len(body))
+        }
+        self.handler.rfile = BytesIO(body)
 
-        # Verify config is still empty
-        config = self.server.load_config()
-        self.assertEqual(config["api_key"], "")
+        self.handler._send_json = MagicMock()
 
-        # Verify response
-        written = self.handler_instance.wfile.write.call_args[0][0]
-        response = json.loads(written.decode())
-        self.assertEqual(response["status"], "logged_out")
+        self.handler.do_POST()
 
-    def test_logout_preserves_other_config(self):
-        """Test that logout only clears API key, not other settings."""
-        # Call logout
-        self.handler_instance.handle_logout()
+        args, kwargs = self.handler._send_json.call_args
+        response_data = args[0]
+        status = args[1] if len(args) > 1 else kwargs.get('status', 200)
 
-        # Verify other config fields are preserved
-        config = self.server.load_config()
-        self.assertEqual(config["default_model"], "gpt-4")
-        self.assertEqual(config["theme"], "light")
+        self.assertEqual(status, 400)
+        self.assertIn('error', response_data)
+        self.assertEqual(response_data['error'], 'No file found in upload')
 
-if __name__ == "__main__":
-    import shutil
+    def test_upload_invalid_mime_type(self):
+        """Test upload with unsupported MIME type."""
+        file_data = b'some binary'
+        body, boundary = self._build_multipart_body(file_data, 'test.exe', content_type='application/x-msdownload')
+        self.handler.headers = {
+            'Content-Type': f'multipart/form-data; boundary={boundary}',
+            'Content-Length': str(len(body))
+        }
+        self.handler.rfile = BytesIO(body)
+
+        self.handler._send_json = MagicMock()
+
+        self.handler.do_POST()
+
+        args, kwargs = self.handler._send_json.call_args
+        response_data = args[0]
+        status = args[1] if len(args) > 1 else kwargs.get('status', 200)
+
+        self.assertEqual(status, 415)
+        self.assertIn('error', response_data)
+        self.assertIn('Unsupported file type', response_data['error'])
+
+    def test_upload_oversized(self):
+        """Test upload with file exceeding size limit."""
+        file_data = b'x' * (MAX_ATTACHMENT_SIZE + 1)
+        body, boundary = self._build_multipart_body(file_data, 'large.txt', content_type='text/plain')
+        self.handler.headers = {
+            'Content-Type': f'multipart/form-data; boundary={boundary}',
+            'Content-Length': str(len(body))
+        }
+        self.handler.rfile = BytesIO(body)
+
+        self.handler._send_json = MagicMock()
+
+        self.handler.do_POST()
+
+        args, kwargs = self.handler._send_json.call_args
+        response_data = args[0]
+        status = args[1] if len(args) > 1 else kwargs.get('status', 200)
+
+        self.assertEqual(status, 413)
+        self.assertIn('error', response_data)
+        self.assertIn('File too large', response_data['error'])
+
+    def test_upload_server_error(self):
+        """Test upload when file cannot be saved."""
+        file_data = b'test data'
+        body, boundary = self._build_multipart_body(file_data, 'test.txt', content_type='text/plain')
+        self.handler.headers = {
+            'Content-Type': f'multipart/form-data; boundary={boundary}',
+            'Content-Length': str(len(body))
+        }
+        self.handler.rfile = BytesIO(body)
+
+        self.handler._send_json = MagicMock()
+
+        # Make ATTACHMENTS_DIR point to a non-writable location
+        with patch('server.ATTACHMENTS_DIR', '/nonexistent/path'):
+            self.handler.do_POST()
+
+            args, kwargs = self.handler._send_json.call_args
+            response_data = args[0]
+            status = args[1] if len(args) > 1 else kwargs.get('status', 200)
+
+            self.assertEqual(status, 500)
+            self.assertIn('error', response_data)
+            self.assertIn('Failed to save file', response_data['error'])
+
+
+if __name__ == '__main__':
     unittest.main()
