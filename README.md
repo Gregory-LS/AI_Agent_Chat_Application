@@ -12,6 +12,7 @@ A Claude-style chat application powered by OpenRouter. Chat with hundreds of mod
 - **Attachments** — upload images (sent to vision-capable models), text/code files (inlined as context)
 - **Settings** — API key management, default model, dark/light theme
 - **Export/Import** — download conversations as JSON or Markdown, restore from backup
+- **Authentication** — user registration and login with JWT-based sessions
 
 ## Quick start
 
@@ -23,7 +24,7 @@ python server.py
 
 Open http://localhost:8000 in your browser.
 
-The `data/` directory (config, conversations, skills, attachments) is created automatically on first run.
+The `data/` directory (config, conversations, skills, attachments, users) is created automatically on first run.
 
 ## Configuration
 
@@ -32,6 +33,7 @@ The `data/` directory (config, conversations, skills, attachments) is created au
 | `OPENROUTER_API_KEY` | — | Your OpenRouter API key (required) |
 | `HOST` | `[IP_ADDRESS]` | Server bind address |
 | `PORT` | `8000` | Server port |
+| `JWT_SECRET` | `change-me-in-production` | Secret key for JWT token signing |
 
 The API key can also be set via the Settings UI (persisted to `data/config.json`).
 
@@ -39,19 +41,21 @@ The API key can also be set via the Settings UI (persisted to `data/config.json`
 
 ```
 ├── openrouter.py           # OpenRouter API client (models, balance, chat)
-├── server.py              # Python backend (stdlib + httpx)
+├── server.py              # Python backend (stdlib + httpx) with authentication
 ├── static/
 │   ├── index.html         # Single-page app markup
 │   ├── styles.css         # Dark/light theme CSS
-│   └── app.js             # Frontend JavaScript with state management and streaming fetch
+│   └── app.js             # Frontend JavaScript with state management
 ├── data/
 │   ├── config.json        # API key, default model
 │   ├── conversations/     # Per-conversation JSON files
 │   ├── skills.json        # Custom skills
-│   └── attachments/       # Uploaded images
+│   ├── attachments/       # Uploaded images
+│   └── users.json         # User accounts (username, password hash, user ID)
 ├── tests/
 │   ├── test_app.html      # Test runner for app.js
-│   ├── test_app.js        # Unit tests for app.js state management and streaming
+│   ├── test_app.js        # Unit tests for app.js state management
+│   ├── test_auth.py       # Authentication unit tests
 │   ├── test_openrouter.py # OpenRouter API unit tests
 │   ├── test_styles.py
 │   └── test_server.py     # Backend unit tests
@@ -62,6 +66,10 @@ The API key can also be set via the Settings UI (persisted to `data/config.json`
 
 | Method | Path | Description |
 |---|---|---|
+| GET | `/login` | Login page |
+| GET | `/register` | Registration page |
+| POST | `/api/register` | Register a new user |
+| POST | `/api/login` | Login and receive JWT cookie |
 | GET | `/api/models` | List OpenRouter models |
 | GET | `/api/balance` | Check API key balance (credits, usage, total) |
 | GET/PUT | `/api/config` | Read/write settings |
@@ -74,7 +82,7 @@ The API key can also be set via the Settings UI (persisted to `data/config.json`
 | POST | `/api/attachments` | Upload an attachment |
 | POST | `/api/chat` | Stream a chat response (SSE) — see below |
 
-The `/api/chat` endpoint returns a Server-Sent Events (SSE) stream. Each event has type `chunk` (partial content), `done` (final), `error` (failure), or `usage` (token usage). The frontend `streamFetch` function in `app.js` processes these events, updating the UI incrementally as chunks arrive, and supports cancellation via an `AbortController`.
+The `/api/chat` endpoint returns a Server-Sent Events (SSE) stream. Each event has type `chunk` (partial content), `done` (final), `error` (failure), or `usage` (token usage).
 
 The `/api/balance` endpoint returns a JSON object with `credits`, `usage`, and `total` fields representing the OpenRouter account balance.
 
@@ -94,11 +102,7 @@ python -m pytest tests/
 
 (Requires `pytest` installed.)
 
-For frontend tests, open `tests/test_app.html` in a browser or run with Node.js:
-
-```bash
-node tests/test_app.js
-```
+For frontend tests, open `tests/test_app.html` in a browser.
 
 ## Styling
 
