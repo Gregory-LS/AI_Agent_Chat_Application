@@ -1,118 +1,87 @@
-import os
+#!/usr/bin/env python3
 import json
-import pytest
-from unittest.mock import AsyncMock, patch
+import os
+import sys
+import tempfile
+import unittest
+from http.server import HTTPServer
+from io import BytesIO
+from unittest.mock import patch
 
-from httpx import AsyncClient, ASGITransport
-from server import app
+# Add parent directory to path to import server
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+from _app.server import RequestHandler, load_conversations, save_conversations
 
+class TestArchiveEndpoint(unittest.TestCase):
+    def setUp(self):
+        # Create a temporary conversations file
+        self.temp_dir = tempfile.mkdtemp()
+        self.conversations_file = os.path.join(self.temp_dir, 'conversations.json')
+        self.patcher = patch('_app.server.CONVERSATIONS_FILE', self.conversations_file)
+        self.patcher.start()
+        # Seed with test data
+        self.test_conversations = {
+            'conv-1': {'id': 'conv-1', 'title': 'Test', 'archived': False},
+            'conv-2': {'id': 'conv-2', 'title': 'Archived', 'archived': True}
+        }
+        save_conversations(self.test_conversations)
 
-@pytest.fixture
-def client():
-    transport = ASGITransport(app=app)
-    return AsyncClient(transport=transport, base_url="http://test")
+    def tearDown(self):
+        self.patcher.stop()
+        # Clean up temp files
+        if os.path.exists(self.conversations_file):
+            os.remove(self.conversations_file)
+        os.rmdir(self.temp_dir)
 
+    def _make_request(self, method, path, body=None):
+        # Simulate a request using the handler's do_POST
+        handler = RequestHandler(None, ('127.0.0.1', 0), None)
+        handler.path = path
+        handler.command = method
+        handler.headers = {}
+        if body:
+            handler.rfile = BytesIO(body.encode())
+        else:
+            handler.rfile = BytesIO(b'')
+        handler.send_response = self._mock_send_response
+        handler.send_header = lambda k, v: None
+        handler.end_headers = lambda: None
+        self.response_data = None
+        self.response_status = None
+        def mock_write(data):
+            self.response_data = json.loads(data.decode())
+        handler.wfile.write = mock_write
+        if method == 'POST':
+            handler.do_POST()
+        return handler
 
-@pytest.fixture(autouse=True)
-def set_env():
-    os.environ["OPENROUTER_API_KEY"] = "test-key"
-    yield
-    if "OPENROUTER_API_KEY" in os.environ:
-        del os.environ["OPENROUTER_API_KEY"]
+    def _mock_send_response(self, status):
+        self.response_status = status
 
+    def test_toggle_archive_non_archived(self):
+        self._make_request('POST', '/api/conversations/conv-1/archive')
+        self.assertEqual(self.response_status, 200)
+        self.assertTrue(self.response_data['archived'])
+        # Verify persistence
+        convs = load_conversations()
+        self.assertTrue(convs['conv-1']['archived'])
 
-@pytest.mark.asyncio
-async def test_health(client):
-    response = await client.get("/health")
-    assert response.status_code == 200
-    assert response.json() == {"status": "healthy"}
+    def test_toggle_archive_archived(self):
+        self._make_request('POST', '/api/conversations/conv-2/archive')
+        self.assertEqual(self.response_status, 200)
+        self.assertFalse(self.response_data['archived'])
+        convs = load_conversations()
+        self.assertFalse(convs['conv-2']['archived'])
 
+    def test_invalid_conversation_id_format(self):
+        self._make_request('POST', '/api/conversations/INVALID/archive')
+        self.assertEqual(self.response_status, 400)
+        self.assertIn('error', self.response_data)
 
-@pytest.mark.asyncio
-async def test_chat_completions_no_api_key():
-    # Temporarily remove API key
-    if "OPENROUTER_API_KEY" in os.environ:
-        del os.environ["OPENROUTER_API_KEY"]
-    transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as client:
-        response = await client.post(
-            "/chat/completions",
-            json={"model": "test-model", "messages": [{"role": "user", "content": "hi"}]},
-        )
-    assert response.status_code == 500
-    assert "API key not configured" in response.json()["detail"]
+    def test_nonexistent_conversation(self):
+        self._make_request('POST', '/api/conversations/nonexistent/archive')
+        self.assertEqual(self.response_status, 404)
+        self.assertIn('error', self.response_data)
 
-
-@pytest.mark.asyncio
-@patch("server.httpx.AsyncClient.stream")
-async def test_chat_completions_success(mock_stream, client):
-    # Mock the streaming response
-    mock_response = AsyncMock()
-    mock_response.status_code = 200
-    mock_response.aiter_lines = AsyncMock(return_value=[
-        "data: {"choices":[{"delta":{"content":"Hello"}}]}",
-        "data: {"choices":[{"delta":{"content":" world"}}]}",
-        "data: [DONE]",
-    ])
-    mock_stream.return_value.__aenter__.return_value = mock_response
-
-    response = await client.post(
-        "/chat/completions",
-        json={"model": "test-model", "messages": [{"role": "user", "content": "hi"}]},
-    )
-    assert response.status_code == 200
-    assert response.headers["content-type"] == "text/event-stream; charset=utf-8"
-    # Read stream
-    lines = response.text.strip().split("\n")
-    assert len(lines) == 3
-    assert lines[0] == "data: {"choices":[{"delta":{"content":"Hello"}}]}"
-    assert lines[1] == "data: {"choices":[{"delta":{"content":" world"}}]}"
-    assert lines[2] == "data: [DONE]"
-
-
-@pytest.mark.asyncio
-@patch("server.httpx.AsyncClient.stream")
-async def test_chat_completions_api_error(mock_stream, client):
-    # Mock an API error response
-    mock_response = AsyncMock()
-    mock_response.status_code = 401
-    mock_response.aread = AsyncMock(return_value=b"Unauthorized")
-    mock_stream.return_value.__aenter__.return_value = mock_response
-
-    response = await client.post(
-        "/chat/completions",
-        json={"model": "test-model", "messages": [{"role": "user", "content": "hi"}]},
-    )
-    assert response.status_code == 200  # We still return 200 with error in stream
-    assert "data: {"error":"Unauthorized"}" in response.text
-    assert "data: [DONE]" in response.text
-
-
-@pytest.mark.asyncio
-@patch("server.httpx.AsyncClient.stream")
-async def test_chat_completions_extra_fields(mock_stream, client):
-    # Test that extra fields are passed through
-    mock_response = AsyncMock()
-    mock_response.status_code = 200
-    mock_response.aiter_lines = AsyncMock(return_value=[
-        "data: {"choices":[{"delta":{"content":"ok"}}]}",
-        "data: [DONE]",
-    ])
-    mock_stream.return_value.__aenter__.return_value = mock_response
-
-    response = await client.post(
-        "/chat/completions",
-        json={
-            "model": "test-model",
-            "messages": [{"role": "user", "content": "hi"}],
-            "temperature": 0.7,
-            "max_tokens": 100,
-        },
-    )
-    assert response.status_code == 200
-    # Verify that the request sent to OpenRouter included extra fields
-    call_args = mock_stream.call_args
-    sent_json = call_args[1]["json"]
-    assert sent_json["temperature"] == 0.7
-    assert sent_json["max_tokens"] == 100
-    assert sent_json["stream"] == True  # Overridden to True
+if __name__ == '__main__':
+    unittest.main()
